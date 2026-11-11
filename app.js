@@ -61,10 +61,22 @@ function summary(code, id) {
 const nowLevel = c => 2 * Number(c) - (D.periodo.q === 'Q1' ? 1 : 0);
 const hasSchedule = code => Object.values(subj(code).g).some(g => g.x.length);
 
-/* ---------- colores por asignatura ---------- */
-function colorOf(code) {
-  const i = (S.asignaturas || []).indexOf(code);
-  return `var(--s${(i % 10) + 1})`;
+/* ---------- colores por asignatura ----------
+   Los mismos que el Visor d'Horaris UPC: 8 colores repartidos en orden entre las asignaturas del grado,
+   ordenadas por semestre del plan y luego alfabéticamente. Así cada asignatura tiene siempre su color. */
+const UPC_COLORS = [ // [fondo (200), color fuerte (600)]: azul, índigo, rojo, naranja, amarillo, verde, verde azulado, cian
+  ['#9EC5FE', '#0A58CA'], ['#C29FFA', '#520DC2'], ['#F1AEB5', '#B02A37'], ['#FECBA1', '#CA6510'],
+  ['#E3D19B', '#957105'], ['#A3CFBB', '#146C43'], ['#D4E6B3', '#769A35'], ['#9EEAF9', '#0AA2C0']];
+const collator = new Intl.Collator('ca');
+let colorCache = null;
+function colorVars(code) {
+  if (!colorCache || colorCache.grado !== S.grado) {
+    const order = grado().a.filter(c => subj(c).v > 0)
+      .sort((a, b) => subj(a).v - subj(b).v || collator.compare(subj(a).n.toUpperCase(), subj(b).n.toUpperCase()));
+    colorCache = { grado: S.grado, idx: Object.fromEntries(order.map((c, i) => [c, i])) };
+  }
+  const [bg, strong] = UPC_COLORS[(colorCache.idx[code] ?? 0) % UPC_COLORS.length];
+  return `--c:${strong};--cb:${bg}`;
 }
 
 /* ---------- conflictos ---------- */
@@ -237,7 +249,7 @@ function viewGrupos() {
       <div class="stack" style="margin-top:14px">
         ${codes.map(c => {
           const sel = S.grupos[c], opts = options(c), bad = !sel || !opts.includes(sel);
-          return `<div class="card gsubj" style="--c:${colorOf(c)}"><span class="bar"></span><div>
+          return `<div class="card gsubj" style="${colorVars(c)}"><span class="bar"></span><div>
             <b>${esc(subj(c).n)}</b>
             ${!S.mismo || bad ? `<select data-c="${c}" aria-label="Grupo de ${esc(subj(c).n)}">
                 <option value="">Elige tu grupo</option>
@@ -282,7 +294,7 @@ function weekGrid(list, clashSet = new Set()) {
     items.forEach(it => { it.n = Math.max(1, ...items.filter(o => o.a < it.b && it.a < o.b).map(o => o.k + 1)); });
     cols.push(`<div class="wk-col" style="height:${H}px;--hpx:${hpx}px">${items.map(({ s, i, a, b, k, n }) => {
       const sub = subj(s.code), x = s.x, w = 100 / n;
-      return `<div class="blk ${clashSet.has(i) ? 'clash' : ''}" style="--c:${colorOf(s.code)};top:${px(a) + 1}px;height:${Math.max(px(b) - px(a) - 2, 18)}px;left:calc(${k * w}% + 2px);width:calc(${w}% - 4px)" title="${esc(sub.n)} · ${TYPE[x[3]] || x[3]} · grupo ${esc(s.group)} · ${x[1]}–${x[2]} · ${esc(x[4])}">
+      return `<div class="blk ${clashSet.has(i) ? 'clash' : ''}" style="${colorVars(s.code)};top:${px(a) + 1}px;height:${Math.max(px(b) - px(a) - 2, 18)}px;left:calc(${k * w}% + 2px);width:calc(${w}% - 4px)" title="${esc(sub.n)} · ${TYPE[x[3]] || x[3]} · grupo ${esc(s.group)} · ${x[1]}–${x[2]} · ${esc(x[4])}">
         ${x[5] && x[5].length === 1 ? `<span class="ab">${x[5]}</span>` : ''}
         <b>${esc(sub.s)} ${x[3]}</b><small>${hh(x[1])}–${hh(x[2])} · ${esc(s.group)}</small><small>${esc(x[4].replace(/ - Lab\..*/, ''))}</small></div>`;
     }).join('')}</div>`);
@@ -312,10 +324,10 @@ function viewSemana() {
     ${cl.length ? `<div class="notice bad" style="margin-top:14px"><b>Hay clases que se pisan.</b> Revisa los grupos:<ul>${cl.map(([a, b]) =>
       `<li>${DAYS[a.x[0]]}: ${esc(shortName(a.code))} (${esc(a.group)}) ${a.x[1]}–${a.x[2]} con ${esc(shortName(b.code))} (${esc(b.group)}) ${b.x[1]}–${b.x[2]}</li>`).join('')}</ul></div>`
       : `<div class="notice good" style="margin-top:14px">Ninguna clase se pisa.</div>`}
-    <div class="legend">${S.asignaturas.filter(hasSchedule).map(c => `<span style="--c:${colorOf(c)}"><i></i>${esc(subj(c).s)} · ${esc(subj(c).n)}</span>`).join('')}</div>
+    <div class="legend">${S.asignaturas.filter(hasSchedule).map(c => `<span style="${colorVars(c)}"><i></i>${esc(subj(c).s)} · ${esc(subj(c).n)}</span>`).join('')}</div>
     ${weekGrid(list, clashSet)}
     ${exams.length ? `<div class="card" style="margin-top:14px"><div class="eyebrow" style="margin-bottom:8px">Tus finales</div>
-      <div class="stack">${exams.map(({ c, e }) => { const d = new Date(e[1] + 'T12:00'); return `<div class="row" style="--c:${colorOf(c)}"><span class="pill" style="font-family:var(--mono)">${DAYS_SHORT[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}</span><span>${esc(subj(c).n)}</span><span style="color:var(--muted);font-size:13px;font-family:var(--mono)">${e[2]}–${e[3]}</span></div>`; }).join('')}</div></div>` : ''}`;
+      <div class="stack">${exams.map(({ c, e }) => { const d = new Date(e[1] + 'T12:00'); return `<div class="row" style="${colorVars(c)}"><span class="pill" style="font-family:var(--mono)">${DAYS_SHORT[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}</span><span>${esc(subj(c).n)}</span><span style="color:var(--muted);font-size:13px;font-family:var(--mono)">${e[2]}–${e[3]}</span></div>`; }).join('')}</div></div>` : ''}`;
   v.querySelectorAll('.blk').forEach(b => b.onclick = () => toast(b.title));
   actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Siguiente'}</button>`);
   $('#back').onclick = () => go('grupos');
@@ -452,7 +464,7 @@ function viewHoy() {
   const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
   const items = [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
   const row = it => {
-    const style = it.kind === 'clase' || it.kind === 'examen' ? `--c:${colorOf(it.code)}` : '';
+    const style = it.kind === 'clase' || it.kind === 'examen' ? `${colorVars(it.code)}` : '';
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : esc(it.label);
     return `<li class="it ${it.kind}" style="${style}"><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
       <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span></li>`;
@@ -574,7 +586,7 @@ function viewEstudio() {
     <p class="lead" style="margin-bottom:10px">Dinos cómo llevas cada una y ajusta las horas si lo ves distinto. Lo que no toques se reparte solo.</p>
     <div class="stack">
       ${W.rows.map(r => `
-        <div class="card subjplan" style="--c:${colorOf(r.c)}">
+        <div class="card subjplan" style="${colorVars(r.c)}">
           <div class="sp-head">
             <span class="bar"></span>
             <div class="sp-name"><b>${esc(r.a.n)}</b>
