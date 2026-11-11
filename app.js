@@ -324,7 +324,7 @@ function viewRutina() {
   const R = S.rutina = { ...RUTINA_DEF, ...(S.rutina || {}) };
   const v = $('#view');
   const mins = (id, label, vals, val, hint = '') => `<label class="field"><span>${label}</span>
-    <select id="${id}">${vals.map(m => `<option value="${m}" ${m === val ? 'selected' : ''}>${m < 60 ? m + ' min' : (m / 60 + ' h').replace('.', ',')}</option>`).join('')}</select>${hint ? `<small>${hint}</small>` : ''}</label>`;
+    <select id="${id}">${vals.map(m => `<option value="${m}" ${m === val ? 'selected' : ''}>${m === 0 ? 'Sin descanso' : dur(m)}</option>`).join('')}</select>${hint ? `<small>${hint}</small>` : ''}</label>`;
   const time = (id, label, val, hint = '') => `<label class="field"><span>${label}</span><input type="time" id="${id}" value="${val}" step="300">${hint ? `<small>${hint}</small>` : ''}</label>`;
   v.innerHTML = `
     <div class="eyebrow">Paso 5 de 5</div>
