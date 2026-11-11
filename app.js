@@ -474,7 +474,8 @@ function viewHoy() {
     <div class="dayhead">
       <button class="icon" id="prev" aria-label="Día anterior">‹</button>
       <div class="dh"><div class="eyebrow">${rel}${p.info.week ? ` · semana ${p.info.week}` : ''}</div>
-        <h1>${DAYS[p.info.wd]} ${d.getDate()} de ${MONTHS[d.getMonth()]}</h1></div>
+        <h1>${DAYS[p.info.wd]} ${d.getDate()} de ${MONTHS[d.getMonth()]}</h1>
+        ${ds !== today ? '<button class="todaybtn" id="today">Volver a hoy</button>' : ''}</div>
       <button class="icon" id="next" aria-label="Día siguiente">›</button>
     </div>
     <div class="stats">
@@ -482,8 +483,7 @@ function viewHoy() {
       <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
     </div>
     ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
-    <ul class="timeline">${items.map(row).join('')}</ul>
-    ${ds !== today ? '<div class="row" style="margin-top:16px"><button class="btn small" id="today">Volver a hoy</button></div>' : ''}`;
+    <ul class="timeline">${items.map(row).join('')}</ul>`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
   $('#prev').onclick = () => slideTo(v, -1, shift);
   $('#next').onclick = () => slideTo(v, 1, shift);
@@ -545,7 +545,12 @@ function swipe(el, fn) {
 function tabs(active) {
   const t = [['hoy', 'Hoy', '◷'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
   actions(`<nav class="tabs">${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
-  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => go(b.dataset.tab));
+  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
+    // tocar la pestaña en la que ya estás te devuelve a hoy / esta semana
+    if (b.dataset.tab === active && active === 'hoy') { S.dia = dkey(new Date()); save(); viewHoy(); return; }
+    if (b.dataset.tab === active && active === 'estudio') { S.semana = dkey(mondayOf(new Date())); save(); viewEstudio(); return; }
+    go(b.dataset.tab);
+  });
 }
 
 /* ---------- plan de estudio semanal ---------- */
@@ -602,7 +607,8 @@ function viewEstudio() {
     <div class="dayhead">
       <button class="icon" id="prev" aria-label="Semana anterior">‹</button>
       <div class="dh"><div class="eyebrow">${label}</div>
-        <h1>${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}</h1></div>
+        <h1>${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}</h1>
+        ${S.semana !== thisMon ? '<button class="todaybtn" id="thisweek">Volver a esta semana</button>' : ''}</div>
       <button class="icon" id="next" aria-label="Semana siguiente">›</button>
     </div>
     <div class="stats">
@@ -656,6 +662,7 @@ function viewEstudio() {
   const shiftW = n => { S.semana = dkey(addDays(dparse(S.semana), 7 * n)); save(); viewEstudio(); };
   $('#prev').onclick = () => slideTo(v, -1, shiftW);
   $('#next').onclick = () => slideTo(v, 1, shiftW);
+  if ($('#thisweek')) $('#thisweek').onclick = () => slideTo(v, S.semana > thisMon ? -1 : 1, () => { S.semana = thisMon; save(); viewEstudio(); });
   swipe(v, shiftW);
   tabs('estudio');
 }
