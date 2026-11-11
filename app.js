@@ -6,7 +6,9 @@ const STORE_KEY = 'quatri.v1';
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const DAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const TYPE = { T: 'Teoría', P: 'Problemas', L: 'Laboratorio' };
-const STEPS = ['grado', 'asignaturas', 'grupos', 'semana'];
+const STEPS = ['grado', 'asignaturas', 'grupos', 'semana', 'rutina'];
+const RUTINA_DEF = { trayecto: 30, prep: 60, despertarLibre: '08:30', comida: '14:30', comidaDur: 30, descanso: 30,
+  merienda: false, meriendaHora: '18:30', cena: '21:15', cenaDur: 30, estudiaNoche: false, dormir: '00:00' };
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -86,14 +88,14 @@ function go(step) { location.hash = step; }
 function current() {
   const h = location.hash.slice(1);
   if (!S.grado) return 'grado';
-  if (STEPS.includes(h) || h === 'inicio') return h;
-  return S.listo ? 'inicio' : 'grado';
+  if (STEPS.includes(h) || h === 'hoy') return h;
+  return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
 }
 function render() {
   const step = current();
   const i = STEPS.indexOf(step);
   $('#steps').innerHTML = i >= 0 ? STEPS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('') : '';
-  ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, inicio: viewInicio })[step]();
+  ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina, hoy: viewHoy })[step]();
   window.scrollTo(0, 0);
 }
 function actions(html) {
@@ -107,7 +109,7 @@ function actions(html) {
 function viewGrado() {
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 1 de 4</div>
+    <div class="eyebrow">Paso 1 de 5</div>
     <h1>¿Qué estudias?</h1>
     <p class="lead">Elige tu grado y cargamos tus clases, festivos y exámenes. Tus datos se guardan solo en este dispositivo.</p>
     <div class="fixed">
@@ -137,7 +139,7 @@ function viewAsignaturas() {
   for (const code of g.a) { const a = subj(code); (byCurso[a.c] = byCurso[a.c] || []).push(code); }
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 2 de 4</div>
+    <div class="eyebrow">Paso 2 de 5</div>
     <h1>¿Qué asignaturas haces este cuatrimestre?</h1>
     <p class="lead">Marca un curso entero con un toque y luego añade o quita las que no encajen: repetidas, adelantadas u optativas.</p>
     <input class="search" id="q" type="search" placeholder="Buscar asignatura" autocomplete="off">
@@ -218,7 +220,7 @@ function viewGrupos() {
   const draw = () => {
     const missing = codes.filter(c => !S.grupos[c] || !options(c).includes(S.grupos[c]));
     v.innerHTML = `
-      <div class="eyebrow">Paso 3 de 4</div>
+      <div class="eyebrow">Paso 3 de 5</div>
       <h1>¿En qué grupos estás?</h1>
       <p class="lead">El grupo de teoría se pone solo según tu subgrupo: los que empiezan por 1 van con la teoría 1 y los que empiezan por 2, con la 2.</p>
       <div class="toggle" role="group">
@@ -296,7 +298,7 @@ function viewSemana() {
   const exams = S.asignaturas.flatMap(c => subj(c).e.map(e => ({ c, e }))).filter(o => o.e[0] === 'final').sort((a, b) => a.e[1].localeCompare(b.e[1]));
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 4 de 4</div>
+    <div class="eyebrow">Paso 4 de 5</div>
     <h1>Tu semana de clases</h1>
     <p class="lead">Las marcas A y B son laboratorios que solo tienes en semanas alternas. Toca un bloque para ver el detalle.</p>
     <div class="stats">
@@ -312,31 +314,184 @@ function viewSemana() {
     ${exams.length ? `<div class="card" style="margin-top:14px"><div class="eyebrow" style="margin-bottom:8px">Tus finales</div>
       <div class="stack">${exams.map(({ c, e }) => { const d = new Date(e[1] + 'T12:00'); return `<div class="row" style="--c:${colorOf(c)}"><span class="pill" style="font-family:var(--mono)">${DAYS_SHORT[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}</span><span>${esc(subj(c).n)}</span><span style="color:var(--muted);font-size:13px;font-family:var(--mono)">${e[2]}–${e[3]}</span></div>`; }).join('')}</div></div>` : ''}`;
   v.querySelectorAll('.blk').forEach(b => b.onclick = () => toast(b.title));
-  actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">Guardar mi horario</button>`);
+  actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Siguiente'}</button>`);
   $('#back').onclick = () => go('grupos');
-  $('#next').onclick = () => { S.listo = true; S.guardado = new Date().toISOString(); save(); toast('Horario guardado'); go('inicio'); };
+  $('#next').onclick = () => { S.guardado = new Date().toISOString(); save(); if (S.listo) { toast('Horario guardado'); go('hoy'); } else go('rutina'); };
 }
 
-/* ---------- Inicio (provisional) ---------- */
-function viewInicio() {
-  const g = grado();
-  const list = mySessions();
+/* ---------- 5. Rutina ---------- */
+function viewRutina() {
+  const R = S.rutina = { ...RUTINA_DEF, ...(S.rutina || {}) };
+  const v = $('#view');
+  const mins = (id, label, vals, val, hint = '') => `<label class="field"><span>${label}</span>
+    <select id="${id}">${vals.map(m => `<option value="${m}" ${m === val ? 'selected' : ''}>${m < 60 ? m + ' min' : (m / 60 + ' h').replace('.', ',')}</option>`).join('')}</select>${hint ? `<small>${hint}</small>` : ''}</label>`;
+  const time = (id, label, val, hint = '') => `<label class="field"><span>${label}</span><input type="time" id="${id}" value="${val}" step="300">${hint ? `<small>${hint}</small>` : ''}</label>`;
+  v.innerHTML = `
+    <div class="eyebrow">Paso 5 de 5</div>
+    <h1>Tu día a día</h1>
+    <p class="lead">Con esto calculamos tus horas libres de verdad, no solo los huecos entre clases. Son valores aproximados: los podrás cambiar cuando quieras.</p>
+    <div class="stack">
+      <section class="card stack"><div class="eyebrow">Ir a la uni</div>
+        <div class="fields">
+          ${mins('trayecto', '¿Cuánto tardas en llegar?', [5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120], R.trayecto, 'Lo mismo a la vuelta.')}
+          ${mins('prep', 'Levantarte, prepararte y desayunar', [15, 30, 45, 60, 75, 90], R.prep)}
+          ${time('despertarLibre', 'Días sin clase te levantas a las', R.despertarLibre)}
+        </div></section>
+      <section class="card stack"><div class="eyebrow">Comidas y descansos</div>
+        <div class="fields">
+          ${time('comida', 'Sueles comer a las', R.comida, 'Si a esa hora estás en clase o volviendo, se mueve a cuando llegues.')}
+          ${mins('comidaDur', 'La comida te lleva', [15, 30, 45, 60], R.comidaDur)}
+          ${mins('descanso', 'Descanso después de comer', [0, 15, 30, 45, 60], R.descanso)}
+          ${time('cena', 'Cenas a las', R.cena)}
+          ${mins('cenaDur', 'La cena te lleva', [15, 30, 45, 60], R.cenaDur)}
+        </div>
+        <label class="check"><input type="checkbox" id="merienda" ${R.merienda ? 'checked' : ''}> Merienda o pausa por la tarde (30 min)</label>
+        <div class="fields" id="mBox" ${R.merienda ? '' : 'hidden'}>${time('meriendaHora', 'Hacia las', R.meriendaHora)}</div>
+      </section>
+      <section class="card stack"><div class="eyebrow">La noche</div>
+        <div class="fields">${time('dormir', 'Te vas a dormir a las', R.dormir)}</div>
+        <label class="check"><input type="checkbox" id="estudiaNoche" ${R.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
+        <small class="hint">Si no lo marcas, de la cena a la hora de dormir no cuenta como tiempo libre para estudiar.</small>
+      </section>
+    </div>`;
+  const read = () => {
+    for (const k of Object.keys(RUTINA_DEF)) {
+      const el = $('#' + k); if (!el) continue;
+      R[k] = el.type === 'checkbox' ? el.checked : (el.tagName === 'SELECT' ? Number(el.value) : el.value || RUTINA_DEF[k]);
+    }
+    $('#mBox').hidden = !R.merienda;
+    save();
+  };
+  v.querySelectorAll('input,select').forEach(el => el.onchange = read);
+  actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Empezar'}</button>`);
+  $('#back').onclick = () => go(S.listo ? 'hoy' : 'semana');
+  $('#next').onclick = () => { read(); S.listo = true; save(); toast('Todo listo'); go('hoy'); };
+}
+
+/* ---------- motor del día ---------- */
+const pad = n => String(n).padStart(2, '0');
+const dkey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dparse = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; };
+const wdOf = d => (d.getDay() + 6) % 7;
+const mondayOf = d => addDays(d, -wdOf(d));
+const dur = m => { const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h} h ${r} min` : `${h} h`) : `${r} min`; };
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+function weekType(ds) {
+  const d = dparse(ds), mon = dkey(mondayOf(d)), sem = D.calendario.semanas;
+  for (const t of ['A', 'B']) for (const start of sem[t] || []) {
+    if (dkey(mondayOf(dparse(start))) === mon && ds >= start) return t;
+  }
+  return null;
+}
+function dayInfo(ds) {
+  const c = D.calendario, d = dparse(ds), wd = wdOf(d);
+  const inPeriod = ds >= c.inicio_clases && ds <= c.fin_clases;
+  const lective = inPeriod && wd < 5 && !(c.dias_sin_clase || []).includes(ds);
+  const finales = c.periodo_finales && ds >= c.periodo_finales[0] && ds <= c.periodo_finales[1];
+  let note = '';
+  if (wd >= 5) note = 'Fin de semana';
+  else if (inPeriod && !lective) note = 'Día sin clases';
+  else if (finales) note = 'Período de exámenes finales';
+  else if (!inPeriod && ds > c.fin_clases) note = 'Sin clases (vacaciones o exámenes)';
+  return { d, wd, lective, week: lective ? weekType(ds) : null, note };
+}
+function dayPlan(ds) {
+  const R = { ...RUTINA_DEF, ...(S.rutina || {}) };
+  const info = dayInfo(ds);
+  const blocks = [];
+  if (info.lective) {
+    for (const s of mySessions()) {
+      const x = s.x;
+      if (x[0] !== info.wd) continue;
+      if (x[5] && x[5].length === 1 && x[5] !== info.week) continue; // laboratorios de semanas alternas
+      blocks.push({ s: toMin(x[1]), e: toMin(x[2]), kind: 'clase', code: s.code, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` });
+    }
+  }
+  for (const c of S.asignaturas || []) for (const e of subj(c).e) {
+    if (e[1] === ds) blocks.push({ s: toMin(e[2]), e: toMin(e[3]), kind: 'examen', code: c, label: `Examen ${e[0]} · ${subj(c).n}`, sub: e[4] });
+  }
+  const T = Number(R.trayecto), P = Number(R.prep);
+  let sleep = toMin(R.dormir || '00:00'); if (sleep < 6 * 60) sleep += 1440;
+  let wake;
+  if (blocks.length) {
+    const first = Math.min(...blocks.map(b => b.s)), last = Math.max(...blocks.map(b => b.e));
+    blocks.push({ s: first - T, e: first, kind: 'trayecto', label: 'Ida a la uni' });
+    blocks.push({ s: last, e: last + T, kind: 'trayecto', label: 'Vuelta a casa' });
+    wake = first - T - P;
+  } else wake = toMin(R.despertarLibre);
+  blocks.push({ s: wake, e: wake + P, kind: 'rutina', label: 'Levantarte y desayunar' });
+  const place = (start, len, label, kind = 'rutina') => {
+    let t = start, moved = true;
+    while (moved) { moved = false; for (const b of blocks) if (t < b.e && b.s < t + len) { t = b.e; moved = true; } }
+    if (t + len > sleep) return null;
+    const b = { s: t, e: t + len, kind, label }; blocks.push(b); return b;
+  };
+  const com = place(toMin(R.comida), Number(R.comidaDur), 'Comida');
+  if (com && Number(R.descanso)) place(com.e, Number(R.descanso), 'Descanso');
+  if (R.merienda) place(toMin(R.meriendaHora), 30, 'Merienda y pausa');
+  const cen = place(toMin(R.cena), Number(R.cenaDur), 'Cena');
+  if (cen && !R.estudiaNoche && cen.e < sleep) blocks.push({ s: cen.e, e: sleep, kind: 'noche', label: 'Desconexión', sub: 'Después de cenar no cuenta para estudiar' });
+  blocks.sort((a, b) => a.s - b.s || a.e - b.e);
+  // huecos libres entre levantarte y dormir
+  const free = []; let t = wake;
+  for (const b of blocks) { if (b.s - t >= 15) free.push({ s: t, e: b.s, kind: 'libre' }); t = Math.max(t, b.e); }
+  if (sleep - t >= 15) free.push({ s: t, e: sleep, kind: 'libre' });
+  return { info, blocks, free, wake, sleep, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
+    classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
+}
+
+/* ---------- Tu día ---------- */
+function viewHoy() {
+  S.dia = S.dia || dkey(new Date());
+  const ds = S.dia, p = dayPlan(ds), d = p.info.d, today = dkey(new Date());
+  const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
+  const items = [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
+  const row = it => {
+    const style = it.kind === 'clase' || it.kind === 'examen' ? `--c:${colorOf(it.code)}` : '';
+    const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : esc(it.label);
+    return `<li class="it ${it.kind}" style="${style}"><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
+      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span></li>`;
+  };
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">${esc(g.id)}</div>
-    <h1>Tu horario está listo</h1>
-    <p class="lead">Lo siguiente que añadiremos: tu rutina (trayectos, comidas, sueño), el calendario completo con festivos y semanas A/B, tus horas libres reales y el plan de estudio.</p>
-    ${weekGrid(list)}
-    <div class="row" style="margin-top:14px">
-      <button class="btn small" id="e1">Cambiar asignaturas</button>
-      <button class="btn small" id="e2">Cambiar grupos</button>
-      <button class="btn small" id="e3">Cambiar de grado</button>
+    <div class="dayhead">
+      <button class="icon" id="prev" aria-label="Día anterior">‹</button>
+      <div class="dh"><div class="eyebrow">${rel}${p.info.week ? ` · semana ${p.info.week}` : ''}</div>
+        <h1>${DAYS[p.info.wd]} ${d.getDate()} de ${MONTHS[d.getMonth()]}</h1></div>
+      <button class="icon" id="next" aria-label="Día siguiente">›</button>
+    </div>
+    <div class="stats">
+      <div class="stat free"><b>${dur(p.freeMin)}</b><span>libres de verdad</span></div>
+      <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
+    </div>
+    ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
+    <ul class="timeline">${items.map(row).join('')}</ul>
+    <div class="row" style="margin-top:16px">
+      ${ds !== today ? '<button class="btn small" id="today">Volver a hoy</button>' : ''}
+      <button class="btn small" id="eRut">Mi rutina</button>
+      <button class="btn small" id="eSem">Mi horario</button>
+      <button class="btn small" id="eAsg">Asignaturas y grupos</button>
     </div>`;
-  $('#e1').onclick = () => go('asignaturas');
-  $('#e2').onclick = () => go('grupos');
-  $('#e3').onclick = () => go('grado');
-  v.querySelectorAll('.blk').forEach(b => b.onclick = () => toast(b.title));
+  const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
+  $('#prev').onclick = () => shift(-1);
+  $('#next').onclick = () => shift(1);
+  if ($('#today')) $('#today').onclick = () => { S.dia = today; save(); viewHoy(); };
+  $('#eRut').onclick = () => go('rutina');
+  $('#eSem').onclick = () => go('semana');
+  $('#eAsg').onclick = () => go('asignaturas');
+  swipe(v, shift);
   actions('');
+}
+function swipe(el, fn) {
+  if (el.dataset.sw) return; el.dataset.sw = 1;
+  let x0 = null, y0 = 0, t0 = 0;
+  el.addEventListener('touchstart', e => { if (e.touches.length !== 1 || current() !== 'hoy') { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (x0 == null) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 1.6 * Math.abs(dy) && Date.now() - t0 < 800) fn(dx < 0 ? 1 : -1);
+  }, { passive: true });
 }
 
 /* ---------- arranque ---------- */
@@ -350,6 +505,7 @@ async function start() {
     return;
   }
   if (S.grado && !grado()) S = {};
+  S.dia = dkey(new Date()); // al abrir la app, siempre empieza en hoy
   window.addEventListener('hashchange', render);
   render();
 }
