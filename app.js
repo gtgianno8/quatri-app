@@ -485,22 +485,60 @@ function viewHoy() {
     <ul class="timeline">${items.map(row).join('')}</ul>
     ${ds !== today ? '<div class="row" style="margin-top:16px"><button class="btn small" id="today">Volver a hoy</button></div>' : ''}`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
-  $('#prev').onclick = () => shift(-1);
-  $('#next').onclick = () => shift(1);
-  if ($('#today')) $('#today').onclick = () => { S.dia = today; save(); viewHoy(); };
+  $('#prev').onclick = () => slideTo(v, -1, shift);
+  $('#next').onclick = () => slideTo(v, 1, shift);
+  if ($('#today')) $('#today').onclick = () => slideTo(v, ds > today ? -1 : 1, () => { S.dia = today; save(); viewHoy(); });
   swipe(v, shift);
   tabs('hoy');
 }
-// Deslizar el dedo a izquierda/derecha llama a la función de la vista actual (día o semana).
+// Deslizar el dedo a izquierda/derecha: la página sigue al dedo y, si pasas el umbral,
+// sale por un lado y la nueva entra por el otro (día o semana siguiente/anterior).
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function slideTo(el, n, fn) {
+  if (reduceMotion()) { fn(n); return; }
+  const w = el.offsetWidth || window.innerWidth;
+  el.style.transition = 'transform .17s ease-in, opacity .17s ease-in';
+  el.style.transform = `translateX(${n > 0 ? -w * 0.6 : w * 0.6}px)`;
+  el.style.opacity = '0';
+  setTimeout(() => {
+    fn(n);
+    el.style.transition = 'none';
+    el.style.transform = `translateX(${n > 0 ? w * 0.45 : -w * 0.45}px)`;
+    el.style.opacity = '0';
+    void el.offsetWidth; // aplica la posición de entrada antes de animar
+    el.style.transition = 'transform .24s cubic-bezier(.2,.8,.2,1), opacity .24s ease-out';
+    el.style.transform = 'translateX(0)';
+    el.style.opacity = '1';
+  }, 170);
+}
 function swipe(el, fn) {
   el._swipe = fn;
   if (el.dataset.sw) return; el.dataset.sw = 1;
-  let x0 = null, y0 = 0, t0 = 0;
-  el.addEventListener('touchstart', e => { if (e.touches.length !== 1 || !el._swipe) { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
-  el.addEventListener('touchend', e => {
-    if (x0 == null || !el._swipe) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > 1.6 * Math.abs(dy) && Date.now() - t0 < 800) el._swipe(dx < 0 ? 1 : -1);
+  let x0 = null, y0 = 0, t0 = 0, lock = null, dx = 0;
+  const reset = (anim = true) => {
+    el.style.transition = anim ? 'transform .2s ease-out, opacity .2s ease-out' : 'none';
+    el.style.transform = 'translateX(0)'; el.style.opacity = '1';
+  };
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || !el._swipe) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); lock = null; dx = 0;
+    el.style.transition = 'none';
   }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (x0 == null) return;
+    dx = e.touches[0].clientX - x0; const dy = e.touches[0].clientY - y0;
+    if (!lock && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) lock = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (lock !== 'x') return;
+    e.preventDefault(); // en horizontal, la página no se desplaza arriba/abajo
+    if (!reduceMotion()) { el.style.transform = `translateX(${dx * 0.85}px)`; el.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / 500)); }
+  }, { passive: false });
+  el.addEventListener('touchend', () => {
+    if (x0 == null || !el._swipe) return; x0 = null;
+    const fast = Math.abs(dx) > 40 && Date.now() - t0 < 300;
+    if (lock === 'x' && (Math.abs(dx) > 70 || fast)) slideTo(el, dx < 0 ? 1 : -1, el._swipe);
+    else reset();
+  }, { passive: true });
+  el.addEventListener('touchcancel', () => { x0 = null; reset(); }, { passive: true });
 }
 
 /* ---------- pestañas ---------- */
@@ -616,8 +654,8 @@ function viewEstudio() {
     E.nivel[b.dataset.l] = b.dataset.v; if (b.dataset.v === 'no') delete E.ajuste[b.dataset.l]; rerender();
   });
   const shiftW = n => { S.semana = dkey(addDays(dparse(S.semana), 7 * n)); save(); viewEstudio(); };
-  $('#prev').onclick = () => shiftW(-1);
-  $('#next').onclick = () => shiftW(1);
+  $('#prev').onclick = () => slideTo(v, -1, shiftW);
+  $('#next').onclick = () => slideTo(v, 1, shiftW);
   swipe(v, shiftW);
   tabs('estudio');
 }
