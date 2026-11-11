@@ -88,14 +88,17 @@ function go(step) { location.hash = step; }
 function current() {
   const h = location.hash.slice(1);
   if (!S.grado) return 'grado';
-  if (STEPS.includes(h) || h === 'hoy') return h;
+  if (STEPS.includes(h)) return h;
+  if (['hoy', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
   return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
 }
 function render() {
   const step = current();
   const i = STEPS.indexOf(step);
   $('#steps').innerHTML = i >= 0 ? STEPS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('') : '';
-  ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina, hoy: viewHoy })[step]();
+  $('#view')._swipe = null;
+  ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
+     hoy: viewHoy, estudio: viewEstudio, ajustes: viewAjustes })[step]();
   window.scrollTo(0, 0);
 }
 function actions(html) {
@@ -468,30 +471,163 @@ function viewHoy() {
     </div>
     ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
     <ul class="timeline">${items.map(row).join('')}</ul>
-    <div class="row" style="margin-top:16px">
-      ${ds !== today ? '<button class="btn small" id="today">Volver a hoy</button>' : ''}
-      <button class="btn small" id="eRut">Mi rutina</button>
-      <button class="btn small" id="eSem">Mi horario</button>
-      <button class="btn small" id="eAsg">Asignaturas y grupos</button>
-    </div>`;
+    ${ds !== today ? '<div class="row" style="margin-top:16px"><button class="btn small" id="today">Volver a hoy</button></div>' : ''}`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
   if ($('#today')) $('#today').onclick = () => { S.dia = today; save(); viewHoy(); };
-  $('#eRut').onclick = () => go('rutina');
-  $('#eSem').onclick = () => go('semana');
-  $('#eAsg').onclick = () => go('asignaturas');
   swipe(v, shift);
-  actions('');
+  tabs('hoy');
 }
+// Deslizar el dedo a izquierda/derecha llama a la función de la vista actual (día o semana).
 function swipe(el, fn) {
+  el._swipe = fn;
   if (el.dataset.sw) return; el.dataset.sw = 1;
   let x0 = null, y0 = 0, t0 = 0;
-  el.addEventListener('touchstart', e => { if (e.touches.length !== 1 || current() !== 'hoy') { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
+  el.addEventListener('touchstart', e => { if (e.touches.length !== 1 || !el._swipe) { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
   el.addEventListener('touchend', e => {
-    if (x0 == null) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > 1.6 * Math.abs(dy) && Date.now() - t0 < 800) fn(dx < 0 ? 1 : -1);
+    if (x0 == null || !el._swipe) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 1.6 * Math.abs(dy) && Date.now() - t0 < 800) el._swipe(dx < 0 ? 1 : -1);
   }, { passive: true });
+}
+
+/* ---------- pestañas ---------- */
+function tabs(active) {
+  const t = [['hoy', 'Hoy', '◷'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
+  actions(`<nav class="tabs">${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
+  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => go(b.dataset.tab));
+}
+
+/* ---------- plan de estudio semanal ---------- */
+const LEVELS = [['bien', 'Bien', 0.7], ['normal', 'Normal', 1], ['cuesta', 'Me cuesta', 1.4], ['no', 'No la estudio', 0]];
+// Por defecto "Normal"; si la asignatura no tiene exámenes (como Ampliació d'Informàtica), empieza en "No la estudio".
+const levelOf = c => (S.estudio?.nivel || {})[c] || (subj(c).e.length ? 'normal' : 'no');
+function classWeeks() {
+  const c = D.calendario;
+  return Math.max(1, (dparse(c.fin_clases) - dparse(c.inicio_clases)) / (7 * 864e5));
+}
+function nextExam(code, fromKey) {
+  return subj(code).e.filter(e => e[1] >= fromKey).sort((a, b) => a[1].localeCompare(b[1]))[0] || null;
+}
+function weekPlan(monKey) {
+  S.estudio = S.estudio || { nivel: {}, ajuste: {} };
+  const E = S.estudio;
+  const mon = dparse(monKey);
+  const days = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
+  const freeMin = days.reduce((n, p) => n + p.freeMin, 0);
+  const codes = (S.asignaturas || []).slice();
+  const rows = codes.map(c => {
+    const a = subj(c), lv = levelOf(c), f = LEVELS.find(l => l[0] === lv)[2];
+    const oficial = (a.h || (a.cr || 0) * 15) / classWeeks();
+    const ex = nextExam(c, monKey);
+    const daysTo = ex ? Math.round((dparse(ex[1]) - mon) / 864e5) : null;
+    const urg = daysTo == null ? 1 : daysTo <= 14 ? 1.6 : daysTo <= 30 ? 1.25 : 1;
+    return { c, a, lv, oficial, ex, daysTo, w: oficial * f * urg };
+  });
+  const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
+  const sugerido = Math.max(1, Math.min(Math.round(freeMin / 60 * 0.4), Math.round(oficialTotal * 0.6)));
+  const objetivo = E.objetivo ?? sugerido;
+  const fixed = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] != null);
+  const auto = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] == null);
+  const fixedSum = fixed.reduce((n, r) => n + E.ajuste[r.c], 0);
+  const rest = Math.max(0, objetivo - fixedSum), wsum = auto.reduce((n, r) => n + r.w, 0);
+  for (const r of rows) {
+    if (r.lv === 'no') r.horas = 0;
+    else if (E.ajuste[r.c] != null) { r.horas = E.ajuste[r.c]; r.manual = true; }
+    else r.horas = wsum ? Math.round(rest * r.w / wsum * 2) / 2 : 0;
+  }
+  const total = rows.reduce((n, r) => n + r.horas, 0);
+  return { days, freeMin, rows, objetivo, sugerido, oficialTotal, total };
+}
+const hfmt = h => num(Math.round(h * 2) / 2) + ' h';
+
+function viewEstudio() {
+  S.semana = S.semana || dkey(mondayOf(new Date()));
+  const W = weekPlan(S.semana), E = S.estudio, mon = dparse(S.semana), sun = addDays(mon, 6);
+  const thisMon = dkey(mondayOf(new Date()));
+  const label = S.semana === thisMon ? 'Esta semana' : S.semana === dkey(addDays(mondayOf(new Date()), 7)) ? 'La semana que viene' : 'Semana';
+  const freeH = W.freeMin / 60, over = W.total > freeH;
+  const v = $('#view');
+  v.innerHTML = `
+    <div class="dayhead">
+      <button class="icon" id="prev" aria-label="Semana anterior">‹</button>
+      <div class="dh"><div class="eyebrow">${label}</div>
+        <h1>${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}</h1></div>
+      <button class="icon" id="next" aria-label="Semana siguiente">›</button>
+    </div>
+    <div class="stats">
+      <div class="stat free"><b>${dur(W.freeMin)}</b><span>libres de verdad esta semana</span></div>
+      <div class="stat"><b>${hfmt(W.total)}</b><span>de estudio planificadas</span></div>
+    </div>
+    <section class="card stack" style="margin-top:12px">
+      <div class="eyebrow">¿Cuántas horas quieres estudiar esta semana?</div>
+      <div class="stepper big">
+        <button id="oMinus" aria-label="Menos horas">−</button>
+        <output id="obj">${hfmt(W.objetivo)}</output>
+        <button id="oPlus" aria-label="Más horas">+</button>
+      </div>
+      <small class="hint">Te proponemos ${hfmt(W.sugerido)}: un 40 % de tus horas libres, sin pasar del 60 % de lo que pide la guía docente (${hfmt(W.oficialTotal)} a la semana).${E.objetivo != null && E.objetivo !== W.sugerido ? ' <button class="link" id="oReset">Volver a la propuesta</button>' : ''}</small>
+      ${over ? `<div class="notice bad">Has planificado más horas de las que tienes libres. Baja el objetivo o revisa tu rutina.</div>` : ''}
+      ${W.total !== W.objetivo ? `<div class="notice warn">Con tus ajustes suman ${hfmt(W.total)}, no ${hfmt(W.objetivo)}.</div>` : ''}
+    </section>
+    <h2 class="sec">Reparto por asignatura</h2>
+    <p class="lead" style="margin-bottom:10px">Dinos cómo llevas cada una y ajusta las horas si lo ves distinto. Lo que no toques se reparte solo.</p>
+    <div class="stack">
+      ${W.rows.map(r => `
+        <div class="card subjplan" style="--c:${colorOf(r.c)}">
+          <div class="sp-head">
+            <span class="bar"></span>
+            <div class="sp-name"><b>${esc(r.a.n)}</b>
+              <small>${r.a.cr ? num(r.a.cr) + ' cr · ' : ''}guía: ${hfmt(r.oficial)}/sem${r.ex ? ` · ${r.ex[0]} en ${r.daysTo} días` : ''}</small></div>
+            ${r.lv === 'no' ? '' : `<div class="stepper">
+              <button data-m="${r.c}" aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p="${r.c}" aria-label="Más">+</button></div>`}
+          </div>
+          <div class="levels" role="group" aria-label="Cómo la llevas">
+            ${LEVELS.map(([id, txt]) => `<button data-l="${r.c}" data-v="${id}" aria-pressed="${r.lv === id}">${txt}</button>`).join('')}
+          </div>
+          ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
+          ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
+        </div>`).join('')}
+    </div>
+    <p class="hint" style="margin-top:14px">Estas horas son tu objetivo para la semana. Tú decides cuándo: usa los huecos verdes de la pestaña Hoy.</p>`;
+  const step = (cur, d) => Math.max(0, Math.round((cur + d) * 2) / 2);
+  const rerender = () => { save(); const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); };
+  $('#oMinus').onclick = () => { E.objetivo = step(W.objetivo, -1); rerender(); };
+  $('#oPlus').onclick = () => { E.objetivo = step(W.objetivo, 1); rerender(); };
+  if ($('#oReset')) $('#oReset').onclick = () => { delete E.objetivo; rerender(); };
+  v.querySelectorAll('[data-m],[data-p]').forEach(b => b.onclick = () => {
+    const c = b.dataset.m || b.dataset.p, r = W.rows.find(x => x.c === c);
+    E.ajuste[c] = step(r.horas, b.dataset.m ? -0.5 : 0.5); rerender();
+  });
+  v.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { delete E.ajuste[b.dataset.r]; rerender(); });
+  v.querySelectorAll('[data-l]').forEach(b => b.onclick = () => {
+    E.nivel[b.dataset.l] = b.dataset.v; if (b.dataset.v === 'no') delete E.ajuste[b.dataset.l]; rerender();
+  });
+  const shiftW = n => { S.semana = dkey(addDays(dparse(S.semana), 7 * n)); save(); viewEstudio(); };
+  $('#prev').onclick = () => shiftW(-1);
+  $('#next').onclick = () => shiftW(1);
+  swipe(v, shiftW);
+  tabs('estudio');
+}
+
+/* ---------- ajustes ---------- */
+function viewAjustes() {
+  const g = grado();
+  const v = $('#view');
+  v.innerHTML = `
+    <div class="eyebrow">Ajustes</div>
+    <h1>Tu Quatri</h1>
+    <p class="lead">${esc(g.n)} · ${S.asignaturas.length} asignaturas · ${esc(D.periodo.curso)} ${esc(D.periodo.q)}</p>
+    <div class="stack">
+      <button class="choice" data-go="rutina"><span><b>Mi rutina</b><span class="code">Trayecto, comidas, descansos y sueño</span></span></button>
+      <button class="choice" data-go="semana"><span><b>Mi horario de clases</b><span class="code">Semana tipo y avisos de solapes</span></span></button>
+      <button class="choice" data-go="grupos"><span><b>Mis grupos</b><span class="code">Cambiar de subgrupo en alguna asignatura</span></span></button>
+      <button class="choice" data-go="asignaturas"><span><b>Mis asignaturas</b><span class="code">Añadir o quitar asignaturas</span></span></button>
+      <button class="choice" data-go="grado"><span><b>Cambiar de grado</b><span class="code">Empieza de nuevo con otro grado</span></span></button>
+    </div>
+    <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
+  v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  tabs('ajustes');
 }
 
 /* ---------- arranque ---------- */
