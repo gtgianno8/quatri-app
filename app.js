@@ -7,6 +7,7 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const DAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const TYPE = { T: 'Teoría', P: 'Problemas', L: 'Laboratorio' };
 const STEPS = ['grado', 'asignaturas', 'grupos', 'semana', 'rutina'];
+const RUT_LABEL = { despertar: 'Levantarte y desayunar', comida: 'Comida', descanso: 'Descanso', merienda: 'Merienda y pausa', cena: 'Cena' };
 const RUTINA_DEF = { trayecto: 30, prep: 60, volverCasa: 0, despertarLibre: '08:30', comida: '14:30', comidaDur: 30, descanso: 30,
   merienda: false, meriendaHora: '18:30', cena: '21:15', cenaDur: 30, estudiaNoche: false, dormir: '00:00' };
 
@@ -605,6 +606,76 @@ function openEvent(id, ds, sMin, eMin) {
   };
   setTimeout(() => { if (!ev) q('#evT').focus(); }, 50);
 }
+/* ---------- rutina de un día concreto ---------- */
+// Cambia comidas, descansos o la hora de levantarte solo para ese día; lo habitual sigue en Ajustes → Mi rutina.
+function openRutinaDia(ds, focus) {
+  const R = { ...RUTINA_DEF, ...(S.rutina || {}) }, p = dayPlan(ds), d = dparse(ds);
+  const had = (S.diaRutina || {})[ds];
+  const cur = k => p.blocks.find(b => b.rk === k);
+  const com = cur('comida');
+  const defs = {
+    despertar: [fmt(p.wake % 1440), Number(R.prep)],
+    comida: [R.comida, Number(R.comidaDur)],
+    descanso: [com ? fmt(com.e % 1440) : R.comida, Number(R.descanso) || 30],
+    merienda: [R.meriendaHora, 30],
+    cena: [R.cena, Number(R.cenaDur)],
+  };
+  const durs = [15, 30, 45, 60, 75, 90, 120];
+  const rows = Object.keys(RUT_LABEL).map(k => {
+    const b = cur(k), on = !!b, ini = b ? fmt(b.s % 1440) : defs[k][0], du = b ? b.e - b.s : defs[k][1];
+    const opts = [...new Set([...durs, du])].sort((a, z) => a - z);
+    return `<div class="rrow${focus === k ? ' focus' : ''}" data-k="${k}">
+      ${k === 'despertar' ? `<b class="rname">${RUT_LABEL[k]}</b>` : `<label class="check"><input type="checkbox" data-on ${on ? 'checked' : ''}> <b>${RUT_LABEL[k]}</b></label>`}
+      <div class="fields" ${on ? '' : 'hidden'}>
+        <label class="field"><span>A las</span><input type="time" data-ini step="300" value="${ini}"></label>
+        <label class="field"><span>Dura</span><select data-dur>${opts.map(m => `<option value="${m}" ${m === du ? 'selected' : ''}>${dur(m)}</option>`).join('')}</select></label>
+      </div></div>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `
+    <form class="sheet" novalidate>
+      <header><h2>Tu rutina del ${DAYS[wdOf(d)].toLowerCase()} ${d.getDate()}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <p class="hint" style="margin:0">Solo cambia este día. Lo de siempre se edita en Ajustes → Mi rutina.</p>
+      <div class="stack">${rows}</div>
+      <footer>
+        ${had ? '<button type="button" class="btn" id="rReset">Volver a lo habitual</button>' : ''}
+        <span class="sp"></span>
+        <button type="button" class="btn" data-x>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const q = s => ov.querySelector(s);
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  const dirty = new Set();
+  ov.querySelectorAll('.rrow').forEach(r => {
+    r.querySelectorAll('input,select').forEach(el => el.addEventListener('change', () => {
+      dirty.add(r.dataset.k);
+      const on = r.querySelector('[data-on]');
+      if (on) r.querySelector('.fields').hidden = !on.checked;
+    }));
+  });
+  if (q('#rReset')) q('#rReset').onclick = () => { delete S.diaRutina[ds]; save(); close(); toast('Este día vuelve a tu rutina de siempre'); render(); };
+  q('form').onsubmit = e => {
+    e.preventDefault();
+    if (!dirty.size) { close(); return; }
+    const O = { ...(had || {}) };
+    for (const k of dirty) {
+      const r = q(`.rrow[data-k="${k}"]`), on = r.querySelector('[data-on]');
+      if (on && !on.checked) O[k] = { off: true };
+      else O[k] = { ini: r.querySelector('[data-ini]').value || defs[k][0], dur: Number(r.querySelector('[data-dur]').value) };
+    }
+    S.diaRutina = S.diaRutina || {};
+    S.diaRutina[ds] = O;
+    save(); close(); toast('Cambiado solo para este día'); render();
+  };
+  setTimeout(() => { const f = q('.rrow.focus'); if (f) f.scrollIntoView({ block: 'nearest' }); }, 50);
+}
+
 function fab(ds) {
   let b = $('#fab');
   if (!b) { b = document.createElement('button'); b.id = 'fab'; b.className = 'fab'; b.setAttribute('aria-label', 'Nuevo evento'); b.textContent = '+'; document.body.appendChild(b); }
@@ -693,19 +764,26 @@ function dayPlan(ds) {
   }
   // si algo empieza antes de lo habitual, te levantas antes
   if (blocks.length) wake = Math.min(wake, Math.min(...blocks.map(b => b.s)) - P);
-  blocks.push({ s: wake, e: wake + P, kind: 'rutina', label: 'Levantarte y desayunar' });
+  // cambios de rutina solo para este día (comer fuera, merendar antes...): mandan sobre lo habitual
+  const O = (S.diaRutina || {})[ds] || {};
+  let wakeLen = P;
+  if (O.despertar && !O.despertar.off) { wake = toMin(O.despertar.ini); wakeLen = Number(O.despertar.dur); }
+  blocks.push({ s: wake, e: wake + wakeLen, kind: 'rutina', label: RUT_LABEL.despertar, rk: 'despertar', mod: !!O.despertar });
+  const fixed = k => { const o = O[k]; if (!o || o.off) return null;
+    const b = { s: toMin(o.ini), e: toMin(o.ini) + Number(o.dur), kind: 'rutina', label: RUT_LABEL[k], rk: k, mod: true }; blocks.push(b); return b; };
+  const fx = { comida: fixed('comida'), descanso: fixed('descanso'), merienda: fixed('merienda'), cena: fixed('cena') };
   // maxShift: cuánto se puede retrasar como mucho (la merienda no tiene sentido a las 22:00)
-  const place = (start, len, label, kind = 'rutina', maxShift = Infinity) => {
+  const place = (start, len, label, kind = 'rutina', maxShift = Infinity, rk = null) => {
     let t = start, moved = true;
     while (moved) { moved = false; for (const b of blocks) if (t < b.e && b.s < t + len) { t = b.e; moved = true; } }
     if (t + len > sleep || t - start > maxShift) return null;
-    const b = { s: t, e: t + len, kind, label }; blocks.push(b); return b;
+    const b = { s: t, e: t + len, kind, label, rk }; blocks.push(b); return b;
   };
-  const com = place(toMin(R.comida), Number(R.comidaDur), 'Comida');
-  if (com && Number(R.descanso)) place(com.e, Number(R.descanso), 'Descanso');
+  const com = O.comida ? fx.comida : place(toMin(R.comida), Number(R.comidaDur), RUT_LABEL.comida, 'rutina', Infinity, 'comida');
+  if (!O.descanso && com && Number(R.descanso)) place(com.e, Number(R.descanso), RUT_LABEL.descanso, 'rutina', Infinity, 'descanso');
   // la merienda va antes de la cena, así que si no cabe cerca de su hora ese día se salta
-  if (R.merienda) place(toMin(R.meriendaHora), 30, 'Merienda y pausa', 'rutina', 90);
-  const cen = place(toMin(R.cena), Number(R.cenaDur), 'Cena');
+  if (!O.merienda && R.merienda) place(toMin(R.meriendaHora), 30, RUT_LABEL.merienda, 'rutina', 90, 'merienda');
+  const cen = O.cena ? fx.cena : place(toMin(R.cena), Number(R.cenaDur), RUT_LABEL.cena, 'rutina', Infinity, 'cena');
   if (cen && !R.estudiaNoche && cen.e < sleep) blocks.push({ s: cen.e, e: sleep, kind: 'noche', label: 'Desconexión', sub: 'Después de cenar no cuenta para estudiar' });
   blocks.sort((a, b) => a.s - b.s || a.e - b.e);
   // huecos libres entre levantarte y dormir
@@ -725,9 +803,9 @@ function viewHoy() {
   const row = it => {
     const style = it.kind === 'clase' || it.kind === 'examen' ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : esc(it.label);
-    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : '';
-    return `<li class="it ${it.kind}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
-      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}</span></li>`;
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : '';
+    return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
+      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
   };
   const v = $('#view');
   v.innerHTML = `
@@ -750,6 +828,7 @@ function viewHoy() {
   $('#next').onclick = () => slideTo(v, 1, shift);
   if ($('#today')) $('#today').onclick = () => slideTo(v, ds > today ? -1 : 1, () => { S.dia = today; save(); viewHoy(); });
   v.querySelectorAll('[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
+  v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
   v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));

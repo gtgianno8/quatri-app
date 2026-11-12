@@ -238,6 +238,12 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .cblk.rut.noche{background:color-mix(in srgb,var(--s6) 18%,var(--surface));border-left-color:var(--s6)}
 .cnow{position:absolute;height:2px;background:var(--bad);z-index:3;pointer-events:none}
 .it{position:relative}
+.it.rutina{cursor:pointer}
+.it.mod .n{border-left-color:var(--hi);border-style:solid}
+.it.mod .n small:last-child{color:var(--warn);font-weight:600}
+.rrow{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.rrow.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.rrow .rname{font-weight:700}
 .nowline{position:absolute;left:63px;right:0;height:2px;margin-top:-1px;
   /* sólida al principio y muy suave después, para que se lea el texto que hay debajo */
   background:linear-gradient(90deg,var(--bad) 0 16px,color-mix(in srgb,var(--bad) 28%,transparent) 40px);z-index:2;pointer-events:none}
