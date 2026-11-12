@@ -111,6 +111,7 @@ function render() {
   const i = STEPS.indexOf(step);
   $('#steps').innerHTML = i >= 0 ? STEPS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('') : '';
   $('#view')._swipe = null;
+  if ($('#fab')) $('#fab').hidden = true;
   ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
      hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes })[step]();
   window.scrollTo(0, 0);
@@ -385,6 +386,112 @@ function viewRutina() {
   $('#next').onclick = () => { read(); S.listo = true; save(); toast('Todo listo'); go('hoy'); };
 }
 
+/* ---------- eventos propios ---------- */
+const EV_TYPES = [['entreno', 'Entreno', '#E8590C'], ['trabajo', 'Trabajo', '#5F3DC4'], ['partido', 'Partido', '#C2255C'],
+  ['plan', 'Plan', '#1971C2'], ['estudio', 'Estudio', '#0B7285'], ['otro', 'Otro', '#495057']];
+const EV_NAME = Object.fromEntries(EV_TYPES.map(t => [t[0], t[1]]));
+const evColor = tipo => (EV_TYPES.find(t => t[0] === tipo) || EV_TYPES[5])[2];
+function eventsOn(ds) {
+  const out = [], wd = (dparse(ds).getDay() + 6) % 7;
+  for (const [id, ev] of Object.entries(S.eventos || {})) {
+    let hit;
+    if (ev.repite) hit = ds >= ev.fecha && (!ev.repite.hasta || ds <= ev.repite.hasta) && ev.repite.dias.includes(wd) && !(ev.excepciones || []).includes(ds);
+    else hit = ev.fecha === ds;
+    if (hit) out.push({ id, ev, s: ev.todoDia ? 0 : toMin(ev.ini), e: ev.todoDia ? 1440 : (ev.fin === '00:00' ? 1440 : toMin(ev.fin)) });
+  }
+  return out.sort((a, b) => a.s - b.s);
+}
+const newId = () => 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function openEvent(id, ds, sMin, eMin) {
+  const ev = id ? S.eventos[id] : null;
+  const F = { tipo: ev?.tipo || 'plan', dias: new Set(ev?.repite?.dias || []) };
+  const s0 = sMin ?? 17 * 60, e0 = eMin ?? Math.min(s0 + 60, 23 * 60 + 55);
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `
+    <form class="sheet" novalidate>
+      <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <label class="field"><span>Qué es</span><input id="evT" maxlength="60" placeholder="Ej.: Entreno en pista" value="${esc(ev?.titulo || '')}" autocomplete="off"></label>
+      <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
+      <div class="fields">
+        <label class="field"><span>Día</span><input type="date" id="evD" value="${ev?.fecha || ds}"></label>
+        <label class="check"><input type="checkbox" id="evAll" ${ev?.todoDia ? 'checked' : ''}> Todo el día</label>
+      </div>
+      <div class="fields" id="evTimes" ${ev?.todoDia ? 'hidden' : ''}>
+        <label class="field"><span>Empieza</span><input type="time" id="evI" step="300" value="${ev?.ini || fmt(s0)}"></label>
+        <label class="field"><span>Acaba</span><input type="time" id="evF" step="300" value="${ev?.fin || fmt(e0 % 1440)}"></label>
+        <label class="field"><span>Tardas en llegar</span><select id="evTr">${[0, 5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90].map(m => `<option value="${m}" ${Number(ev?.trayecto || 0) === m ? 'selected' : ''}>${m ? dur(m) : 'Es en casa / no cuenta'}</option>`).join('')}</select><small>Se añade la ida antes y la vuelta después.</small></label>
+      </div>
+      <label class="check"><input type="checkbox" id="evRep" ${ev?.repite ? 'checked' : ''}> Se repite cada semana</label>
+      <div id="evRepBox" class="stack" ${ev?.repite ? '' : 'hidden'}>
+        <div class="evdays">${DAYS_SHORT.map((d, i) => `<button type="button" data-d="${i}" aria-pressed="${F.dias.has(i)}">${d}</button>`).join('')}</div>
+        <label class="field"><span>Hasta (opcional)</span><input type="date" id="evH" value="${ev?.repite?.hasta || ''}"></label>
+      </div>
+      <label class="field"><span>Lugar (opcional)</span><input id="evL" maxlength="60" value="${esc(ev?.lugar || '')}" autocomplete="off"></label>
+      <p class="err" id="evErr" hidden></p>
+      <div class="confirm" id="evConf" hidden></div>
+      <footer>
+        ${ev ? '<button type="button" class="btn danger" id="evDel">Eliminar</button>' : ''}
+        <span class="sp"></span>
+        <button type="button" class="btn" data-x>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(ov);
+  const q = s => ov.querySelector(s);
+  const close = () => ov.remove();
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
+  ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const i = +b.dataset.d; F.dias.has(i) ? F.dias.delete(i) : F.dias.add(i); b.setAttribute('aria-pressed', String(F.dias.has(i))); });
+  q('#evAll').onchange = () => { q('#evTimes').hidden = q('#evAll').checked; };
+  q('#evRep').onchange = () => {
+    q('#evRepBox').hidden = !q('#evRep').checked;
+    if (q('#evRep').checked && !F.dias.size && q('#evD').value) { const i = wdOf(dparse(q('#evD').value)); F.dias.add(i); q(`[data-d="${i}"]`).setAttribute('aria-pressed', 'true'); }
+  };
+  const err = m => { q('#evErr').textContent = m; q('#evErr').hidden = false; };
+  q('form').onsubmit = e => {
+    e.preventDefault();
+    const titulo = q('#evT').value.trim(), fecha = q('#evD').value, todoDia = q('#evAll').checked;
+    const ini = q('#evI').value, fin = q('#evF').value;
+    if (!titulo) return err('Ponle un nombre, por ejemplo "Entreno" o "Trabajo".');
+    if (!fecha) return err('Elige el día.');
+    if (!todoDia && (!ini || !fin)) return err('Indica la hora de inicio y de fin.');
+    if (!todoDia && fin !== '00:00' && toMin(fin) <= toMin(ini)) return err('La hora de fin tiene que ser posterior a la de inicio.');
+    const data = { titulo, tipo: F.tipo, fecha, todoDia, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
+      trayecto: todoDia ? 0 : Number(q('#evTr').value), lugar: q('#evL').value.trim(), repite: null, excepciones: ev?.excepciones || [] };
+    if (q('#evRep').checked) {
+      if (!F.dias.size) return err('Elige al menos un día de la semana.');
+      const hasta = q('#evH').value;
+      if (hasta && hasta < fecha) return err('La fecha "hasta" tiene que ser posterior al primer día.');
+      data.repite = { dias: [...F.dias].sort(), hasta };
+    } else data.excepciones = [];
+    S.eventos = S.eventos || {};
+    S.eventos[id || newId()] = data;
+    save(); close(); toast(id ? 'Evento actualizado' : 'Evento guardado'); render();
+  };
+  if (q('#evDel')) q('#evDel').onclick = () => {
+    const c = q('#evConf'); c.hidden = false;
+    const one = ev.repite && ds;
+    c.innerHTML = ev.repite
+      ? `<span>Se repite cada semana. ¿Qué quieres eliminar?</span><div class="row">
+          ${one ? `<button type="button" class="btn" id="dOne">Solo el ${dparse(ds).getDate()}/${dparse(ds).getMonth() + 1}</button>` : ''}
+          <button type="button" class="btn danger" id="dAll">Toda la serie</button><button type="button" class="btn" id="dNo">Cancelar</button></div>`
+      : `<span>¿Eliminar «${esc(ev.titulo)}»?</span><div class="row"><button type="button" class="btn danger" id="dAll">Sí, eliminar</button><button type="button" class="btn" id="dNo">Cancelar</button></div>`;
+    q('#dNo').onclick = () => { c.hidden = true; };
+    q('#dAll').onclick = () => { delete S.eventos[id]; save(); close(); toast('Evento eliminado'); render(); };
+    if (q('#dOne')) q('#dOne').onclick = () => { ev.excepciones = [...new Set([...(ev.excepciones || []), ds])]; save(); close(); toast('Eliminado solo ese día'); render(); };
+  };
+  setTimeout(() => { if (!ev) q('#evT').focus(); }, 50);
+}
+function fab(ds) {
+  let b = $('#fab');
+  if (!b) { b = document.createElement('button'); b.id = 'fab'; b.className = 'fab'; b.setAttribute('aria-label', 'Nuevo evento'); b.textContent = '+'; document.body.appendChild(b); }
+  b.hidden = false;
+  b.onclick = () => openEvent(null, ds());
+}
+
 /* ---------- motor del día ---------- */
 const pad = n => String(n).padStart(2, '0');
 const dkey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -438,6 +545,20 @@ function dayPlan(ds) {
     blocks.push({ s: last, e: last + T, kind: 'trayecto', label: 'Vuelta a casa' });
     wake = first - T - P;
   } else wake = toMin(R.despertarLibre);
+  // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos
+  const evs = eventsOn(ds);
+  const allDay = evs.filter(x => x.ev.todoDia);
+  for (const x of evs.filter(x => !x.ev.todoDia)) {
+    const Te = Number(x.ev.trayecto) || 0;
+    blocks.push({ s: x.s, e: x.e, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo,
+      sub: [EV_NAME[x.ev.tipo], x.ev.lugar, x.ev.repite ? 'cada semana' : ''].filter(Boolean).join(' · ') });
+    if (Te) {
+      blocks.push({ s: x.s - Te, e: x.s, kind: 'trayecto', label: `Ida · ${x.ev.titulo}` });
+      blocks.push({ s: x.e, e: x.e + Te, kind: 'trayecto', label: `Vuelta · ${x.ev.titulo}` });
+    }
+  }
+  // si algo empieza antes de lo habitual, te levantas antes
+  if (blocks.length) wake = Math.min(wake, Math.min(...blocks.map(b => b.s)) - P);
   blocks.push({ s: wake, e: wake + P, kind: 'rutina', label: 'Levantarte y desayunar' });
   const place = (start, len, label, kind = 'rutina') => {
     let t = start, moved = true;
@@ -455,7 +576,7 @@ function dayPlan(ds) {
   const free = []; let t = wake;
   for (const b of blocks) { if (b.s - t >= 15) free.push({ s: t, e: b.s, kind: 'libre' }); t = Math.max(t, b.e); }
   if (sleep - t >= 15) free.push({ s: t, e: sleep, kind: 'libre' });
-  return { info, blocks, free, wake, sleep, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
+  return { info, blocks, free, wake, sleep, allDay, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
     classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
 }
 
@@ -466,10 +587,11 @@ function viewHoy() {
   const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
   const items = [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
   const row = it => {
-    const style = it.kind === 'clase' || it.kind === 'examen' ? `${colorVars(it.code)}` : '';
+    const style = it.kind === 'clase' || it.kind === 'examen' ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : esc(it.label);
-    return `<li class="it ${it.kind}" style="${style}"><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
-      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span></li>`;
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : '';
+    return `<li class="it ${it.kind}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
+      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}</span></li>`;
   };
   const v = $('#view');
   v.innerHTML = `
@@ -485,13 +607,20 @@ function viewHoy() {
       <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
     </div>
     ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
+    ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
     <ul class="timeline">${items.map(row).join('')}</ul>`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
   $('#prev').onclick = () => slideTo(v, -1, shift);
   $('#next').onclick = () => slideTo(v, 1, shift);
   if ($('#today')) $('#today').onclick = () => slideTo(v, ds > today ? -1 : 1, () => { S.dia = today; save(); viewHoy(); });
+  v.querySelectorAll('[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
+  v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
+    const [a, b] = el.dataset.free.split(',').map(Number);
+    openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
+  });
   swipe(v, shift);
   tabs('hoy');
+  fab(() => S.dia);
 }
 // Deslizar el dedo a izquierda/derecha: la página sigue al dedo y, si pasas el umbral,
 // sale por un lado y la nueva entra por el otro (día o semana siguiente/anterior).
@@ -620,7 +749,17 @@ function viewCalendario() {
     if (e.target.closest('.cblk')) return;
     S.dia = el.dataset.day; save(); go('hoy');
   });
-  v.querySelectorAll('.cblk').forEach(b => b.onclick = e => { e.stopPropagation(); toast(b.dataset.info); });
+  v.querySelectorAll('.cblk').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    if (b.dataset.evid) return openEvent(b.dataset.evid, b.dataset.ds);
+    if (b.dataset.free) { const [a, z] = b.dataset.free.split(',').map(Number), s = Math.ceil(a / 15) * 15; return openEvent(null, b.dataset.ds, s, Math.min(s + 60, z)); }
+    toast(b.dataset.info);
+  });
+  fab(() => {
+    const t = dkey(new Date());
+    if (isWeek) return t >= S.calSemana && t <= dkey(addDays(dparse(S.calSemana), 6)) ? t : S.calSemana;
+    return t.startsWith(S.calMes) ? t : S.calMes + '-01';
+  });
   const rt = $('#rutinaToggle');
   if (rt) rt.onchange = () => { S.calRutina = rt.checked; save(); viewCalendario(); };
   swipe(v, shift);
@@ -633,7 +772,7 @@ function calWeek() {
   const showRut = !!S.calRutina;
   let h0 = 24, h1 = 0;
   for (const { p } of days) {
-    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen'), ...p.free];
+    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'evento'), ...p.free];
     for (const b of items) { h0 = Math.min(h0, Math.floor(b.s / 60)); h1 = Math.max(h1, Math.ceil(b.e / 60)); }
   }
   if (h0 >= h1) { h0 = 8; h1 = 22; }
@@ -643,13 +782,15 @@ function calWeek() {
   const cols = days.map(({ ds, p }) => {
     const items = [];
     for (const f of p.free) if (f.e - f.s >= 30) items.push({ ...f });
-    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || showRut) items.push(b);
+    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || b.kind === 'evento' || showRut) items.push(b);
     const html = items.map(b => {
       const top = px(b.s), h = Math.max(px(b.e) - top - 1, 6);
       if (b.kind === 'libre') {
         const d = dur(b.e - b.s).replace(' min', 'm').replace(' h', 'h').replace(' ', '');
-        return `<div class="cblk libre" style="top:${top}px;height:${h}px" data-info="Libre ${fmt(b.s % 1440)}–${fmt(b.e % 1440)} · ${dur(b.e - b.s)}">${h >= 13 ? `<b>Libre</b>` : ''}${h >= 26 ? `<small>${d}</small>` : ''}</div>`;
+        return `<div class="cblk libre" style="top:${top}px;height:${h}px" data-free="${b.s},${b.e}" data-ds="${ds}">${h >= 13 ? `<b>Libre</b>` : ''}${h >= 26 ? `<small>${d}</small>` : ''}</div>`;
       }
+      if (b.kind === 'evento') return `<div class="cblk evento" style="--ev:${evColor(b.tipo)};top:${top}px;height:${h}px" data-evid="${b.id}" data-ds="${ds}">
+          <b>${esc(b.label.split(' ')[0].slice(0, 9))}</b>${h > 24 ? `<small>${fmt(b.s % 1440)}</small>` : ''}</div>`;
       if (b.kind === 'clase' || b.kind === 'examen') {
         const a = subj(b.code), ex = b.kind === 'examen';
         const tipo = ex ? 'EX' : (b.sub || '').charAt(0);
@@ -711,6 +852,7 @@ function calMonth() {
       <span class="mnum">${d.getDate()}${wk ? `<i class="wkab">${wk}</i>` : ''}</span>
       ${nolect && !exams.length ? `<span class="mtag">${(D.calendario.periodo_parciales && ds >= D.calendario.periodo_parciales[0] && ds <= D.calendario.periodo_parciales[1]) ? 'Parciales' : (D.calendario.periodo_finales && ds >= D.calendario.periodo_finales[0] && ds <= D.calendario.periodo_finales[1]) ? 'Finales' : 'Sin clase'}</span>` : ''}
       ${exams.length ? exams.map(({ c }) => `<span class="mex" style="${colorVars(c)}">${esc(subj(c).s)}</span>`).join('') : ''}
+      ${eventsOn(ds).slice(0, 2).map(x => `<span class="mev" style="--ev:${evColor(x.ev.tipo)}">${esc(x.ev.titulo)}</span>`).join('')}
       <span class="mdots">${classCodes.slice(0, 6).map(c => `<i style="${colorVars(c)}"></i>`).join('')}</span>
     </button>`);
   }
