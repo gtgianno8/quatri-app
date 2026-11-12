@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Quatri</title>
 <meta name="description" content="Tu quatri organizado: horario, tiempo libre real y plan de estudio.">
-<meta name="theme-color" content="#254A7C">
+<meta name="theme-color" content="#F1F5F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16241F" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -14,13 +15,19 @@
 <meta name="apple-mobile-web-app-title" content="Quatri">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script>
+  // aplica el modo elegido (claro/oscuro/automático) antes de pintar, para que no parpadee
+  try { const t = (JSON.parse(localStorage.getItem('quatri.v1')) || {}).tema;
+    if (t === 'claro') document.documentElement.dataset.theme = 'light';
+    else if (t === 'oscuro') document.documentElement.dataset.theme = 'dark'; } catch (e) {}
+</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="top">
   <div class="top-in">
-    <div class="brand">Quatri<span class="beta">beta 0.12</span></div>
+    <div class="brand"><span>quatri<span class="dot">.</span></span><span class="beta">beta 0.13</span></div>
     <div class="steps" id="steps" aria-label="Progreso"></div>
   </div>
 </header>

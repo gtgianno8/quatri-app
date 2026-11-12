@@ -986,14 +986,35 @@ function viewEstudio() {
   tabs('estudio');
 }
 
+/* ---------- apariencia: automático / claro / oscuro ---------- */
+function applyTheme() {
+  const t = S.tema || 'auto', root = document.documentElement;
+  if (t === 'claro') root.dataset.theme = 'light';
+  else if (t === 'oscuro') root.dataset.theme = 'dark';
+  else delete root.dataset.theme;
+  const dark = t === 'oscuro' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  // color de la barra del sistema en el móvil
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.setAttribute('content', dark ? '#16241F' : '#F1F5F2'); m.removeAttribute('media'); });
+}
+
 /* ---------- ajustes ---------- */
 function viewAjustes() {
   const g = grado();
   const v = $('#view');
+  const tema = S.tema || 'auto';
   v.innerHTML = `
     <div class="eyebrow">Ajustes</div>
     <h1>Tu Quatri</h1>
     <p class="lead">${esc(g.n)} · ${S.asignaturas.length} asignaturas · ${esc(D.periodo.curso)} ${esc(D.periodo.q)}</p>
+    <section class="card stack" style="margin-bottom:12px">
+      <div class="eyebrow">Apariencia</div>
+      <div class="seg2" role="group" aria-label="Modo de color" style="margin:0">
+        <button data-tema="auto" aria-pressed="${tema === 'auto'}">Automático</button>
+        <button data-tema="claro" aria-pressed="${tema === 'claro'}">Claro</button>
+        <button data-tema="oscuro" aria-pressed="${tema === 'oscuro'}">Oscuro</button>
+      </div>
+      <small class="hint">Automático sigue el modo de tu móvil.</small>
+    </section>
     <div class="stack">
       <button class="choice" data-go="rutina"><span><b>Mi rutina</b><span class="code">Trayecto, comidas, descansos y sueño</span></span></button>
       <button class="choice" data-go="semana"><span><b>Mi horario de clases</b><span class="code">Semana tipo y avisos de solapes</span></span></button>
@@ -1003,6 +1024,7 @@ function viewAjustes() {
     </div>
     <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  v.querySelectorAll('[data-tema]').forEach(b => b.onclick = () => { S.tema = b.dataset.tema; save(); applyTheme(); viewAjustes(); });
   tabs('ajustes');
 }
 
@@ -1018,6 +1040,8 @@ async function start() {
   }
   if (S.grado && !grado()) S = {};
   S.dia = dkey(new Date()); // al abrir la app, siempre empieza en hoy
+  applyTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   window.addEventListener('hashchange', render);
   render();
 }
