@@ -101,7 +101,9 @@ function clashes(list) {
 function go(step) { location.hash = step; }
 function current() {
   const h = location.hash.slice(1);
-  if (!S.grado) return 'grado';
+  if (h === 'bienvenida') return h;
+  if (!S.grado) return h === 'grado' ? 'grado' : 'bienvenida';
+  if (h === 'listo' && S.listo) return h;
   if (STEPS.includes(h)) return h;
   if (['hoy', 'calendario', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
   return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
@@ -112,7 +114,7 @@ function render() {
   $('#steps').innerHTML = i >= 0 ? STEPS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('') : '';
   $('#view')._swipe = null;
   if ($('#fab')) $('#fab').hidden = true;
-  ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
+  ({ bienvenida: viewBienvenida, listo: viewListo, grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
      hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes })[step]();
   window.scrollTo(0, 0);
 }
@@ -146,7 +148,8 @@ function viewGrado() {
     if (S.grado !== b.dataset.g) { S.grado = b.dataset.g; S.asignaturas = []; S.grupos = {}; S.listo = false; save(); }
     go('asignaturas');
   });
-  actions('');
+  actions(`<button class="btn" id="back">Atrás</button><span class="info">Toca tu grado para seguir</span>`);
+  $('#back').onclick = () => go(S.listo ? 'ajustes' : 'bienvenida');
 }
 
 /* ---------- 2. Asignaturas ---------- */
@@ -383,7 +386,119 @@ function viewRutina() {
   v.querySelectorAll('input,select').forEach(el => el.onchange = read);
   actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Empezar'}</button>`);
   $('#back').onclick = () => go(S.listo ? 'hoy' : 'semana');
-  $('#next').onclick = () => { read(); S.listo = true; save(); toast('Todo listo'); go('hoy'); };
+  $('#next').onclick = () => {
+    read();
+    if (S.listo) { toast('Rutina guardada'); go('hoy'); return; }
+    S.listo = true; save(); go('listo');
+  };
+}
+
+/* ---------- bienvenida ---------- */
+// Lo primero que ve alguien nuevo: qué es Quatri, qué hace por ti y qué tienes que hacer para dejarlo listo.
+function viewBienvenida() {
+  const c = UPC_COLORS;
+  const demo = [
+    ['08:00', '08:45', 'trayecto', 'Ida a la uni', ''],
+    ['09:00', '11:00', 'clase', 'Física', 'Teoría · aula TR2 · 0.15', c[0]],
+    ['11:00', '13:00', 'clase', 'Química', 'Laboratorio · semana A', c[5]],
+    ['13:00', '13:45', 'trayecto', 'Vuelta a casa', ''],
+    ['14:30', '15:30', 'rutina', 'Comida y descanso', ''],
+    ['15:30', '17:45', 'libre', 'Libre · 2 h 15 min', 'Para estudiar lo que toca hoy'],
+    ['18:00', '19:30', 'evento', 'Entreno', 'Lo añades tú · cada martes'],
+  ];
+  const v = $('#view');
+  v.innerHTML = `
+    <section class="hero">
+      <div class="eyebrow">Para estudiantes de la UPC · ESEIAAT</div>
+      <h1 class="hero-t">Tu quatri,<br>bajo control<span class="dot">.</span></h1>
+      <p class="lead">Quatri monta tu horario de la uni en dos minutos y te dice cuánto <b>tiempo libre te queda de verdad</b>: para estudiar, entrenar, trabajar o simplemente descansar.</p>
+    </section>
+
+    <div class="demo" aria-label="Ejemplo de un día en Quatri">
+      <div class="demo-head"><span class="eyebrow">Ejemplo · un martes cualquiera</span><span class="pill free-pill">3 h 45 min libres de verdad</span></div>
+      <ul class="timeline">${demo.map(([a, b, k, t, s, col]) => `
+        <li class="it ${k}" style="${col ? `--c:${col[1]};--cb:${col[0]}` : k === 'evento' ? '--ev:#E8590C' : ''}"><span class="t">${a}<br><small>${b}</small></span>
+        <span class="n"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span></li>`).join('')}</ul>
+    </div>
+
+    <h2 class="sec">Qué hace por ti</h2>
+    <div class="feats">
+      <div class="feat"><span class="num">01</span><div><b>Tu horario, sin teclear nada</b>
+        <p>Eliges grado, asignaturas y grupo, y aparecen tus clases con aulas, semanas A/B de laboratorio, festivos y fechas de examen. Todo sale del horario oficial de la escuela.</p></div></div>
+      <div class="feat"><span class="num">02</span><div><b>Tu tiempo libre real</b>
+        <p>Un hueco entre clases no es tiempo libre si estás en el tren. Quatri descuenta trayectos, comidas y descansos y te enseña las horas que de verdad te quedan.</p></div></div>
+      <div class="feat"><span class="num">03</span><div><b>Tu vida también cuenta</b>
+        <p>Añade entrenos, trabajo o planes, con su trayecto y repetidos cada semana. Tu día se recoloca solo.</p></div></div>
+      <div class="feat"><span class="num">04</span><div><b>Un plan de estudio a tu medida</b>
+        <p>Según los créditos, cómo llevas cada asignatura y lo cerca que está el examen, te propone cuántas horas dedicar a cada una. La última palabra es tuya.</p></div></div>
+    </div>
+
+    <h2 class="sec">Cómo lo dejas listo</h2>
+    <p class="lead" style="margin-bottom:10px">Cinco pasos, unos dos minutos. Lo puedes cambiar todo después.</p>
+    <ol class="howto">
+      <li><b>Tu grado</b><span>Para saber qué asignaturas y horarios cargar.</span></li>
+      <li><b>Tus asignaturas</b><span>Las de este cuatrimestre, aunque sean de cursos distintos.</span></li>
+      <li><b>Tus grupos</b><span>Tu subgrupo de laboratorio o problemas; la teoría se pone sola.</span></li>
+      <li><b>Revisa tu semana</b><span>Ves tu horario y te avisamos si alguna clase se pisa.</span></li>
+      <li><b>Tu día a día</b><span>Cuánto tardas en llegar, a qué hora comes, cenas y duermes.</span></li>
+    </ol>
+
+    <div class="trust">
+      <span><i aria-hidden="true">✓</i>Gratis y sin anuncios</span>
+      <span><i aria-hidden="true">✓</i>Sin cuenta: tus datos se quedan en tu móvil</span>
+      <span><i aria-hidden="true">✓</i>Horarios oficiales del Visor d'Horaris UPC</span>
+    </div>
+    <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de la ESEIAAT (Terrassa) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
+  if (S.listo) {
+    actions(`<span class="info">Así funciona Quatri</span><button class="btn primary" id="next">Volver</button>`);
+    $('#next').onclick = () => go('ajustes');
+  } else {
+    actions(`<span class="info">Unos 2 minutos</span><button class="btn primary" id="next">Empezar</button>`);
+    $('#next').onclick = () => go('grado');
+  }
+}
+
+/* ---------- todo listo ---------- */
+// Se ve una vez, al terminar el alta: lo que ya tienes y cómo se usa cada pestaña.
+function viewListo() {
+  const today = new Date(), mon = mondayOf(today);
+  const week = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
+  const freeMin = week.reduce((n, p) => n + p.freeMin, 0), classMin = week.reduce((n, p) => n + p.classMin, 0);
+  const tk = dkey(today);
+  const ex = (S.asignaturas || []).flatMap(c => subj(c).e.filter(e => e[1] >= tk).map(e => ({ c, e })))
+    .sort((a, b) => a.e[1].localeCompare(b.e[1]))[0];
+  const exDays = ex ? Math.round((dparse(ex.e[1]) - dparse(tk)) / 864e5) : null;
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const tour = [
+    ['◷', 'Hoy', 'Tu día hora a hora. Los huecos verdes son tiempo libre: tócalos para añadir algo. Desliza para cambiar de día.'],
+    ['▦', 'Calendario', 'Tu semana y tu mes de un vistazo, con festivos, semanas A/B y exámenes.'],
+    ['✎', 'Estudio', 'Dinos cómo llevas cada asignatura y te proponemos cuántas horas dedicarle esta semana.'],
+    ['⚙', 'Ajustes', 'Cambia tu rutina, grupos o asignaturas cuando quieras, y elige modo claro u oscuro.'],
+  ];
+  const v = $('#view');
+  v.innerHTML = `
+    <section class="hero">
+      <div class="eyebrow">Todo listo</div>
+      <h1 class="hero-t">Ya tienes<br>tu quatri<span class="dot">.</span></h1>
+      <p class="lead">Tus clases, exámenes y rutina ya están dentro. Esto es lo que te queda esta semana:</p>
+    </section>
+    <div class="stats">
+      <div class="stat free"><b>${dur(freeMin)}</b><span>libres de verdad esta semana</span></div>
+      <div class="stat"><b>${classMin ? dur(classMin) : '—'}</b><span>de clase esta semana</span></div>
+      ${ex ? `<div class="stat wide" style="${colorVars(ex.c)}"><b>${exDays === 0 ? 'Hoy' : exDays === 1 ? 'Mañana' : `${exDays} días`}</b><span>para tu próximo examen: ${esc(subj(ex.c).n)}</span></div>` : ''}
+    </div>
+    <h2 class="sec">Así se usa</h2>
+    <div class="feats">
+      ${tour.map(([ic, t, d]) => `<div class="feat"><span class="num ic" aria-hidden="true">${ic}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
+      <div class="feat hi"><span class="num ic" aria-hidden="true">+</span><div><b>Añade tu vida</b>
+        <p>Con el botón + apuntas entrenos, trabajo o planes. Si les pones trayecto, también lo descontamos de tu tiempo libre.</p></div></div>
+    </div>
+    ${installed ? '' : `<div class="notice warn" style="margin-top:14px"><b>Tenla a mano como una app.</b> ${ios
+      ? 'En Safari, toca Compartir y luego «Añadir a pantalla de inicio».'
+      : 'En el menú del navegador, elige «Instalar app» o «Añadir a pantalla de inicio».'}</div>`}`;
+  actions(`<span class="info"></span><button class="btn primary" id="next">Ir a mi día</button>`);
+  $('#next').onclick = () => { S.dia = dkey(new Date()); save(); go('hoy'); };
 }
 
 /* ---------- eventos propios ---------- */
@@ -1021,6 +1136,7 @@ function viewAjustes() {
       <button class="choice" data-go="grupos"><span><b>Mis grupos</b><span class="code">Cambiar de subgrupo en alguna asignatura</span></span></button>
       <button class="choice" data-go="asignaturas"><span><b>Mis asignaturas</b><span class="code">Añadir o quitar asignaturas</span></span></button>
       <button class="choice" data-go="grado"><span><b>Cambiar de grado</b><span class="code">Empieza de nuevo con otro grado</span></span></button>
+      <button class="choice" data-go="bienvenida"><span><b>Cómo funciona Quatri</b><span class="code">Vuelve a ver la presentación</span></span></button>
     </div>
     <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
