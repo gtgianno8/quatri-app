@@ -430,13 +430,13 @@ function viewBienvenida() {
     <h2 class="sec">Qué hace por ti</h2>
     <div class="feats">
       <div class="feat"><span class="num">01</span><div><b>Tu horario, sin teclear nada</b>
-        <p>Eliges grado, asignaturas y grupo, y aparecen tus clases con aulas, semanas A/B de laboratorio, festivos y fechas de examen. Todo sale del horario oficial de la escuela.</p></div></div>
+        <p>Clases, aulas, festivos y exámenes del horario oficial.</p></div></div>
       <div class="feat"><span class="num">02</span><div><b>Tu tiempo libre real</b>
-        <p>Un hueco entre clases no es tiempo libre si estás en el tren. Quatri descuenta trayectos, comidas y descansos y te enseña las horas que de verdad te quedan.</p></div></div>
+        <p>Descontando trayectos, comidas y descansos.</p></div></div>
       <div class="feat"><span class="num">03</span><div><b>Tu vida también cuenta</b>
-        <p>Añade entrenos, trabajo o planes, con su trayecto y repetidos cada semana. Tu día se recoloca solo.</p></div></div>
+        <p>Entrenos, trabajo o planes, en el mismo sitio.</p></div></div>
       <div class="feat"><span class="num">04</span><div><b>Un plan de estudio a tu medida</b>
-        <p>Según los créditos, cómo llevas cada asignatura y lo cerca que está el examen, te propone cuántas horas dedicar a cada una. La última palabra es tuya.</p></div></div>
+        <p>Cuántas horas dedicar a cada asignatura. Tú decides.</p></div></div>
     </div>
 
     <h2 class="sec">Cómo lo dejas listo</h2>

@@ -1,6 +1,6 @@
 // Service worker: la app funciona sin conexión una vez abierta.
 // Cambia VERSION cada vez que publiques cambios para que los móviles se actualicen.
-const VERSION = 'quatri-v0.17';
+const VERSION = 'quatri-v0.18';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'data/eseiaat-2026-27-q1.json'];
 
 self.addEventListener('install', e => {
