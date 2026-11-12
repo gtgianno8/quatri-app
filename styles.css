@@ -238,7 +238,13 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .cblk.rut.noche{background:color-mix(in srgb,var(--s6) 18%,var(--surface));border-left-color:var(--s6)}
 .cnow{position:absolute;height:2px;background:var(--bad);z-index:3;pointer-events:none}
 .it{position:relative}
-.it.rutina{cursor:pointer}
+.it.rutina,.it.clase,.it.estudio,.it.saltada{cursor:pointer}
+.it.estudio .n{background:color-mix(in srgb,var(--cb) 40%,var(--surface));border:1px dashed var(--c);border-left:4px solid var(--c)}
+.it.estudio .n b{font-weight:600}
+.it.saltada .n{background:transparent;border:1px dashed var(--line);border-left:4px solid color-mix(in srgb,var(--c) 45%,transparent);opacity:.75}
+.it.saltada .n b{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--fg) 45%,transparent)}
+.cblk.estudio{background:repeating-linear-gradient(135deg,var(--cb) 0 5px,color-mix(in srgb,var(--cb) 45%,var(--surface)) 5px 10px);border-left:3px solid var(--c);color:#1E2530;z-index:2}
+.seg2.three button{font-size:12.5px;line-height:1.15;padding:0 4px;height:42px}
 .it.mod .n{border-left-color:var(--hi);border-style:solid}
 .it.mod .n small:last-child{color:var(--warn);font-weight:600}
 .rrow{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}

@@ -606,6 +606,74 @@ function openEvent(id, ds, sMin, eMin) {
   };
   setTimeout(() => { if (!ev) q('#evT').focus(); }, 50);
 }
+/* ---------- ¿vas a esta clase? ---------- */
+function openClase(ds, ck) {
+  const s = mySessions().find(x => clsKey(x) === ck);
+  if (!s) return;
+  const x = s.x, a = subj(s.code), d = dparse(ds);
+  S.faltas = S.faltas || {}; S.noVoy = S.noVoy || {};
+  const dk = ds + '|' + ck, punt = S.faltas[dk], reg = S.noVoy[ck];
+  const F = {
+    siempre: !!reg,
+    hoy: punt ? (punt.voy ? 'voy' : 'no') : (reg ? 'no' : 'voy'),
+    estudio: (punt && !punt.voy ? punt.estudio : reg?.estudio) || 'no',
+  };
+  const dia = DAYS[x[0]].toLowerCase();
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `
+    <form class="sheet" novalidate style="${colorVars(s.code)}">
+      <header><h2>${esc(a.n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <p class="hint" style="margin:-6px 0 0">${TYPE[x[3]] || x[3]} · ${x[1]}–${x[2]} · grupo ${esc(s.group)} · ${esc(x[4].replace(/ - Lab\..*/, ''))}</p>
+      <div class="field"><span>El ${dia} ${d.getDate()} de ${MONTHS[d.getMonth()]}</span>
+        <div class="seg2" role="group" style="margin:0">
+          <button type="button" data-hoy="voy">Voy a clase</button>
+          <button type="button" data-hoy="no">No voy</button>
+        </div></div>
+      <label class="check"><input type="checkbox" id="cSiempre" ${F.siempre ? 'checked' : ''}> No voy nunca a esta clase (todos los ${dia} a las ${hh(x[1])})</label>
+      <div class="field" id="cEst"><span>En vez de la clase</span>
+        <div class="seg2 three" role="group" style="margin:0">
+          <button type="button" data-est="no">Tiempo libre</button>
+          <button type="button" data-est="casa">Estudiar en casa</button>
+          <button type="button" data-est="uni">Estudiar en la uni</button>
+        </div>
+        <small>Si ese día no tienes nada más en la uni y no vas, tampoco contamos el trayecto.</small></div>
+      <footer><span class="sp"></span>
+        <button type="button" class="btn" data-x>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const q = sel => ov.querySelector(sel);
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  const paint = () => {
+    ov.querySelectorAll('[data-hoy]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hoy === F.hoy)));
+    ov.querySelectorAll('[data-est]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.est === F.estudio)));
+    q('#cEst').hidden = F.hoy === 'voy' && !F.siempre;
+  };
+  ov.querySelectorAll('[data-hoy]').forEach(b => b.onclick = () => { F.hoy = b.dataset.hoy; paint(); });
+  ov.querySelectorAll('[data-est]').forEach(b => b.onclick = () => { F.estudio = b.dataset.est; paint(); });
+  q('#cSiempre').onchange = () => { F.siempre = q('#cSiempre').checked; F.hoy = F.siempre ? 'no' : 'voy'; paint(); };
+  paint();
+  q('form').onsubmit = e => {
+    e.preventDefault();
+    delete S.faltas[dk];
+    if (F.siempre) {
+      S.noVoy[ck] = { estudio: F.estudio };
+      if (F.hoy === 'voy') S.faltas[dk] = { voy: true }; // este día sí vas, aunque normalmente no
+    } else {
+      delete S.noVoy[ck];
+      if (F.hoy === 'no') S.faltas[dk] = { estudio: F.estudio };
+    }
+    save(); close();
+    toast(F.siempre ? `Guardado para todos los ${dia}` : F.hoy === 'no' ? 'Guardado solo para este día' : 'Vas a clase');
+    render();
+  };
+}
+
 /* ---------- rutina de un día concreto ---------- */
 // Cambia comidas, descansos o la hora de levantarte solo para ese día; lo habitual sigue en Ajustes → Mi rutina.
 function openRutinaDia(ds, focus) {
@@ -712,16 +780,30 @@ function dayInfo(ds) {
   else if (!inPeriod && ds > c.fin_clases) note = 'Sin clases (vacaciones o exámenes)';
   return { d, wd, lective, week: lective ? weekType(ds) : null, note };
 }
+// Clases a las que no vas. S.noVoy[clave] = siempre (cada semana); S.faltas['fecha|clave'] = solo ese día.
+// { estudio: 'no' | 'casa' | 'uni' }, o { voy: true } para ir un día concreto aunque normalmente no vayas.
+const clsKey = s => [s.code, s.group, s.x[0], s.x[1], s.x[3], s.x[5] || ''].join('|');
+function clsSkip(ds, ck) {
+  const d = (S.faltas || {})[ds + '|' + ck], r = (S.noVoy || {})[ck];
+  if (d) return d.voy ? null : { ...d, siempre: false };
+  return r ? { ...r, siempre: true } : null;
+}
 function dayPlan(ds) {
   const R = { ...RUTINA_DEF, ...(S.rutina || {}) };
   const info = dayInfo(ds);
-  const blocks = [];
+  const blocks = [], skipped = [];
   if (info.lective) {
     for (const s of mySessions()) {
       const x = s.x;
       if (x[0] !== info.wd) continue;
       if (x[5] && x[5].length === 1 && x[5] !== info.week) continue; // laboratorios de semanas alternas
-      blocks.push({ s: toMin(x[1]), e: toMin(x[2]), kind: 'clase', code: s.code, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` });
+      const ck = clsKey(s), f = clsSkip(ds, ck);
+      const base = { s: toMin(x[1]), e: toMin(x[2]), code: s.code, ck, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` };
+      if (!f) { blocks.push({ ...base, kind: 'clase' }); continue; }
+      // no vas a esta clase: queda libre o la cambias por estudio (en casa o en la uni)
+      skipped.push({ ...base, kind: 'saltada', siempre: f.siempre });
+      if (f.estudio === 'casa' || f.estudio === 'uni') blocks.push({ ...base, kind: 'estudio', uni: f.estudio === 'uni',
+        label: `Estudio · ${subj(s.code).n}`, sub: f.estudio === 'uni' ? 'En la uni, en vez de ir a clase' : 'En casa, en vez de ir a clase' });
     }
   }
   for (const c of S.asignaturas || []) for (const e of subj(c).e) {
@@ -730,14 +812,16 @@ function dayPlan(ds) {
   const T = Number(R.trayecto), P = Number(R.prep);
   let sleep = toMin(R.dormir || '00:00'); if (sleep < 6 * 60) sleep += 1440;
   let wake;
-  if (blocks.length) {
-    const first = Math.min(...blocks.map(b => b.s)), last = Math.max(...blocks.map(b => b.e));
+  // solo hay trayecto a la uni si ese día tienes algo allí (clase, examen o estudio en la uni)
+  const atUni = blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.uni);
+  if (atUni.length) {
+    const first = Math.min(...atUni.map(b => b.s)), last = Math.max(...atUni.map(b => b.e));
     blocks.push({ s: first - T, e: first, kind: 'trayecto', label: 'Ida a la uni' });
     blocks.push({ s: last, e: last + T, kind: 'trayecto', label: 'Vuelta a casa' });
     // huecos largos entre clases: si el alumno vuelve a casa, son dos trayectos más
     const VC = Number(R.volverCasa) || 0;
     if (VC) {
-      const uni = blocks.filter(b => b.kind === 'clase' || b.kind === 'examen').sort((a, b) => a.s - b.s);
+      const uni = atUni.slice().sort((a, b) => a.s - b.s);
       let end = uni[0].e;
       for (const b of uni.slice(1)) {
         const gap = b.s - end;
@@ -750,6 +834,13 @@ function dayPlan(ds) {
     }
     wake = first - T - P;
   } else wake = toMin(R.despertarLibre);
+  // el estudio en casa no puede coincidir con el trayecto a la uni: se recorta (y si no queda nada, se quita)
+  for (const b of blocks.filter(b => b.kind === 'estudio' && !b.uni)) {
+    for (const t of blocks.filter(t => t.kind === 'trayecto')) {
+      if (t.s < b.e && b.s < t.e) { if (t.s <= b.s) b.s = Math.min(b.e, t.e); else b.e = Math.max(b.s, t.s); }
+    }
+  }
+  for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].kind === 'estudio' && blocks[i].e - blocks[i].s < 15) blocks.splice(i, 1);
   // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos
   const evs = eventsOn(ds);
   const allDay = evs.filter(x => x.ev.todoDia);
@@ -790,7 +881,7 @@ function dayPlan(ds) {
   const free = []; let t = wake;
   for (const b of blocks) { if (b.s - t >= 15) free.push({ s: t, e: b.s, kind: 'libre' }); t = Math.max(t, b.e); }
   if (sleep - t >= 15) free.push({ s: t, e: sleep, kind: 'libre' });
-  return { info, blocks, free, wake, sleep, allDay, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
+  return { info, blocks, free, skipped, wake, sleep, allDay, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
     classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
 }
 
@@ -799,11 +890,12 @@ function viewHoy() {
   S.dia = S.dia || dkey(new Date());
   const ds = S.dia, p = dayPlan(ds), d = p.info.d, today = dkey(new Date());
   const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
-  const items = [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
+  const items = [...p.blocks, ...p.free, ...p.skipped].sort((a, b) => a.s - b.s || (b.kind === 'saltada') - (a.kind === 'saltada'));
   const row = it => {
-    const style = it.kind === 'clase' || it.kind === 'examen' ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
-    const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : esc(it.label);
-    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : '';
+    const style = it.code ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
+    const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : it.kind === 'saltada' ? `No vas · ${esc(it.label)}` : esc(it.label);
+    if (it.kind === 'saltada') it = { ...it, sub: `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}` };
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
     return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
       <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
   };
@@ -829,6 +921,7 @@ function viewHoy() {
   if ($('#today')) $('#today').onclick = () => slideTo(v, ds > today ? -1 : 1, () => { S.dia = today; save(); viewHoy(); });
   v.querySelectorAll('[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
   v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
+  v.querySelectorAll('[data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
   v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
@@ -1010,7 +1103,7 @@ function calWeek() {
   const showRut = !!S.calRutina;
   let h0 = 24, h1 = 0;
   for (const { p } of days) {
-    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'evento'), ...p.free];
+    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'evento'), ...p.free];
     for (const b of items) { h0 = Math.min(h0, Math.floor(b.s / 60)); h1 = Math.max(h1, Math.ceil(b.e / 60)); }
   }
   if (h0 >= h1) { h0 = 8; h1 = 22; }
@@ -1020,7 +1113,7 @@ function calWeek() {
   const cols = days.map(({ ds, p }) => {
     const items = [];
     for (const f of p.free) if (f.e - f.s >= 30) items.push({ ...f });
-    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || b.kind === 'evento' || showRut) items.push(b);
+    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'evento' || showRut) items.push(b);
     const html = items.map(b => {
       const top = px(b.s), h = Math.max(px(b.e) - top - 1, 6);
       if (b.kind === 'libre') {
@@ -1029,6 +1122,8 @@ function calWeek() {
       }
       if (b.kind === 'evento') return `<div class="cblk evento" style="--ev:${evColor(b.tipo)};top:${top}px;height:${h}px" data-evid="${b.id}" data-ds="${ds}">
           <b>${esc(b.label.split(' ')[0].slice(0, 9))}</b>${h > 24 ? `<small>${fmt(b.s % 1440)}</small>` : ''}</div>`;
+      if (b.kind === 'estudio') return `<div class="cblk estudio" style="${colorVars(b.code)};top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s)}–${fmt(b.e)} · ${esc(b.sub)}">
+          <b>${esc(subj(b.code).s)}</b>${h > 24 ? '<small>Estudio</small>' : ''}</div>`;
       if (b.kind === 'clase' || b.kind === 'examen') {
         const a = subj(b.code), ex = b.kind === 'examen';
         const tipo = ex ? 'EX' : (b.sub || '').charAt(0);
