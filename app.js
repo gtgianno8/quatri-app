@@ -414,14 +414,12 @@ function openEvent(id, ds, sMin, eMin) {
       <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
       <label class="field"><span>Qué es</span><input id="evT" maxlength="60" placeholder="Ej.: Entreno en pista" value="${esc(ev?.titulo || '')}" autocomplete="off"></label>
       <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
-      <div class="fields">
-        <label class="field"><span>Día</span><input type="date" id="evD" value="${ev?.fecha || ds}"></label>
-        <label class="check"><input type="checkbox" id="evAll" ${ev?.todoDia ? 'checked' : ''}> Todo el día</label>
-      </div>
+      <label class="field"><span>Día</span><input type="date" id="evD" value="${ev?.fecha || ds}"></label>
+      <label class="check"><input type="checkbox" id="evAll" ${ev?.todoDia ? 'checked' : ''}> Todo el día</label>
       <div class="fields" id="evTimes" ${ev?.todoDia ? 'hidden' : ''}>
         <label class="field"><span>Empieza</span><input type="time" id="evI" step="300" value="${ev?.ini || fmt(s0)}"></label>
         <label class="field"><span>Acaba</span><input type="time" id="evF" step="300" value="${ev?.fin || fmt(e0 % 1440)}"></label>
-        <label class="field"><span>Tardas en llegar</span><select id="evTr">${[0, 5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90].map(m => `<option value="${m}" ${Number(ev?.trayecto || 0) === m ? 'selected' : ''}>${m ? dur(m) : 'Es en casa / no cuenta'}</option>`).join('')}</select><small>Se añade la ida antes y la vuelta después.</small></label>
+        <label class="field wide"><span>Tardas en llegar</span><select id="evTr">${[0, 5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90].map(m => `<option value="${m}" ${Number(ev?.trayecto || 0) === m ? 'selected' : ''}>${m ? dur(m) : 'Es en casa / no cuenta'}</option>`).join('')}</select><small>Se añade la ida antes y la vuelta después.</small></label>
       </div>
       <label class="check"><input type="checkbox" id="evRep" ${ev?.repite ? 'checked' : ''}> Se repite cada semana</label>
       <div id="evRepBox" class="stack" ${ev?.repite ? '' : 'hidden'}>
@@ -439,8 +437,9 @@ function openEvent(id, ds, sMin, eMin) {
       </footer>
     </form>`;
   document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden'; // la página de detrás no se mueve mientras el formulario está abierto
   const q = s => ov.querySelector(s);
-  const close = () => ov.remove();
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
   ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
   ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
