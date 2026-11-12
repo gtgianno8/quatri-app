@@ -106,6 +106,7 @@ function current() {
   if (!S.grado) return h === 'grado' ? 'grado' : 'bienvenida';
   if (h === 'listo' && S.listo) return h;
   if (STEPS.includes(h)) return h;
+  if (h === 'temario') return S.listo && S.temCode && subj(S.temCode) ? h : (S.listo ? 'estudio' : 'grado');
   if (['hoy', 'calendario', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
   return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
 }
@@ -116,7 +117,7 @@ function render() {
   $('#view')._swipe = null;
   if ($('#fab')) $('#fab').hidden = true;
   ({ bienvenida: viewBienvenida, listo: viewListo, grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
-     hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes })[step]();
+     hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes, temario: viewTemario })[step]();
   window.scrollTo(0, 0);
 }
 function actions(html) {
@@ -1294,6 +1295,7 @@ function viewEstudio() {
           <div class="levels" role="group" aria-label="Cómo la llevas">
             ${LEVELS.map(([id, txt]) => `<button data-l="${r.c}" data-v="${id}" aria-pressed="${r.lv === id}">${txt}</button>`).join('')}
           </div>
+          <button class="temlink" data-tem="${r.c}"><span>Temario${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
           ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
           ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
         </div>`).join('')}
@@ -1309,6 +1311,7 @@ function viewEstudio() {
     E.ajuste[c] = step(r.horas, b.dataset.m ? -0.5 : 0.5); rerender();
   });
   v.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { delete E.ajuste[b.dataset.r]; rerender(); });
+  v.querySelectorAll('[data-tem]').forEach(b => b.onclick = () => openTemario(b.dataset.tem));
   v.querySelectorAll('[data-l]').forEach(b => b.onclick = () => {
     E.nivel[b.dataset.l] = b.dataset.v; if (b.dataset.v === 'no') delete E.ajuste[b.dataset.l]; rerender();
   });
@@ -1318,6 +1321,137 @@ function viewEstudio() {
   if ($('#thisweek')) $('#thisweek').onclick = () => slideTo(v, S.semana > thisMon ? -1 : 1, () => { S.semana = thisMon; save(); viewEstudio(); });
   swipe(v, shiftW);
   tabs('estudio');
+}
+
+/* ---------- temario de cada asignatura ----------
+   Sale de la guía docente oficial (apartado CONTINGUTS) y el alumno lo puede editar.
+   S.temario[código] = { temas: [{ id, t, d, h, ex: 'pf'|'p'|'f'|'', st: 'nuevo'|'viendo'|'ok'|'repasar' }] } */
+const TEM_URL = 'data/temarios-eseiaat.json';
+let TM = null; // temarios de la guía, se cargan la primera vez que hacen falta
+async function loadTemarios() {
+  if (TM) return TM;
+  try { const r = await fetch(TEM_URL); TM = r.ok ? await r.json() : {}; } catch { TM = {}; }
+  return TM;
+}
+const TEM_ST = [['nuevo', 'Sin empezar'], ['viendo', 'Viendo'], ['ok', 'Lo tengo'], ['repasar', 'Repasar']];
+// Títulos de la guía en MAYÚSCULAS -> "Tema 2: Electrocinètica" (se respetan números romanos y siglas cortas)
+const niceTitle = t => {
+  t = t.replace(/^Títol contingut (\d+):\s*/i, 'Tema $1: ');
+  const body = t.replace(/^(tema|mòdul|modul|bloc|part|contingut)\s*[\divx]+\s*[:.\-]\s*/i, '');
+  if (body !== body.toUpperCase()) return t;
+  const s = t.toLowerCase().replace(/^((?:tema|mòdul|modul|bloc|part)\s+)([ivx]+)\b/, (m, a, b) => a + b.toUpperCase());
+  return s.replace(/(^|[:.]\s+)(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+};
+// Si la guía no dice en qué examen entra un tema, suponemos que entra en el final.
+const fromGuia = code => (TM?.[code] || []).map(([t, d, h, ex], i) => ({ id: 'g' + i, t: niceTitle(t), d, h, ex: ex || 'f', st: 'nuevo' }));
+function temasOf(code) { return S.temario?.[code]?.temas || null; }
+function temProgress(code) {
+  const ts = temasOf(code) || [];
+  return { n: ts.length, ok: ts.filter(t => t.st === 'ok').length };
+}
+function openTemario(code) { S.temCode = code; save(); go('temario'); }
+
+async function viewTemario() {
+  const code = S.temCode, a = subj(code), v = $('#view');
+  tabs('estudio');
+  if (!TM) {
+    v.innerHTML = '<p class="lead">Cargando el temario…</p>';
+    await loadTemarios();
+    if (S.temCode !== code || current() !== 'temario') return;
+  }
+  if (!temasOf(code) && TM[code]) { S.temario = S.temario || {}; S.temario[code] = { temas: fromGuia(code), guia: true }; save(); }
+  // sin temario en la guía: lista vacía hasta que el alumno añada el primer tema
+  const T = S.temario?.[code] || { temas: [], guia: false }, ts = T.temas;
+  const tot = ts.reduce((n, t) => n + (Number(t.h) || 0), 0), pr = temProgress(code);
+  const exams = a.e.map(e => e[0]);
+  const exLabel = ex => [ex.includes('p') ? 'Parcial' : '', ex.includes('f') ? 'Final' : ''].filter(Boolean);
+  v.innerHTML = `
+    <button class="link back" id="tBack">‹ Estudio</button>
+    <div class="tem-head" style="${colorVars(code)}"><span class="bar"></span><div>
+      <div class="eyebrow">Temario</div><h1>${esc(a.n)}</h1></div></div>
+    ${ts.length ? `<div class="tem-prog"><div><b>${pr.ok} de ${pr.n}</b> temas que ya tienes${tot ? ` · ${hfmt(tot)} de estudio según la guía` : ''}</div>
+      <div class="pbar"><i style="width:${pr.n ? Math.round(pr.ok / pr.n * 100) : 0}%"></i></div></div>` : ''}
+    ${T.guia ? `<p class="hint">Sacado de la guía docente oficial. Si tu profesor lo da distinto, toca un tema para cambiarlo.</p>`
+      : `<div class="notice warn">Esta asignatura no tiene temario en la guía docente. Añade los temas que estáis dando.</div>`}
+    <div class="stack" style="margin-top:12px">${ts.map((t, i) => `
+      <div class="card tema st-${t.st}" data-i="${i}">
+        <button class="tema-main" data-edit="${i}">
+          <b>${esc(t.t)}</b>
+          ${t.d ? `<small>${esc(t.d)}</small>` : ''}
+          <span class="tema-tags">${t.h ? `<span>${hfmt(Number(t.h))}</span>` : ''}${exLabel(t.ex || '').map(x => `<span class="ex">${x}</span>`).join('')}</span>
+        </button>
+        <div class="tema-st" role="group" aria-label="Cómo lo llevas">${TEM_ST.map(([id, txt]) => `<button data-st="${id}" aria-pressed="${t.st === id}">${txt}</button>`).join('')}</div>
+      </div>`).join('')}
+    </div>
+    <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:8px">
+      <button class="btn" id="tAdd">+ Añadir tema</button>
+      ${TM?.[code] && ts.length ? '<button class="btn" id="tReset">Volver al temario de la guía</button>' : ''}
+    </div>
+    ${exams.length ? `<p class="hint" style="margin-top:14px">Marca en cada tema si entra en el ${exams.includes('parcial') ? 'parcial, en el ' : ''}final: así sabremos qué preparar para cada examen.</p>` : ''}
+    <div class="confirm" id="tConf" hidden style="margin-top:10px"></div>`;
+  const rerender = () => { save(); const y = window.scrollY; viewTemario(); window.scrollTo(0, y); };
+  $('#tBack').onclick = () => go('estudio');
+  v.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+    const i = +b.closest('[data-i]').dataset.i; ts[i].st = b.dataset.st; rerender();
+  });
+  v.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openTema(code, +b.dataset.edit));
+  $('#tAdd').onclick = () => openTema(code, null);
+  if ($('#tReset')) $('#tReset').onclick = async () => {
+    const c = $('#tConf'); c.hidden = false;
+    c.innerHTML = `<span>Se perderán tus cambios y lo que has marcado en cada tema. ¿Seguro?</span><div class="row">
+      <button class="btn danger" id="rY">Sí, volver a la guía</button><button class="btn" id="rN">Cancelar</button></div>`;
+    $('#rN').onclick = () => { c.hidden = true; };
+    $('#rY').onclick = async () => { await loadTemarios(); S.temario[code] = { temas: fromGuia(code), guia: !!TM[code] }; rerender(); toast('Temario de la guía recuperado'); };
+  };
+}
+function openTema(code, i) {
+  S.temario = S.temario || {};
+  S.temario[code] = S.temario[code] || { temas: [], guia: false };
+  const ts = S.temario[code].temas, t = i == null ? null : ts[i];
+  const ex = t?.ex || '';
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `
+    <form class="sheet" novalidate>
+      <header><h2>${t ? 'Editar tema' : 'Nuevo tema'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <label class="field"><span>Tema</span><input id="tT" maxlength="90" value="${esc(t?.t || '')}" placeholder="Ej.: Tema 3 · Transformada de Laplace" autocomplete="off"></label>
+      <label class="field"><span>Qué incluye (opcional)</span><textarea id="tD" rows="3" maxlength="300">${esc(t?.d || '')}</textarea></label>
+      <label class="field"><span>Horas de estudio que crees que necesita</span><input id="tH" type="number" min="0" max="200" step="0.5" inputmode="decimal" value="${t?.h ?? ''}"></label>
+      <div class="field"><span>Entra en</span>
+        <label class="check"><input type="checkbox" id="tP" ${ex.includes('p') ? 'checked' : ''}> Parcial</label>
+        <label class="check"><input type="checkbox" id="tF" ${ex.includes('f') || !t ? 'checked' : ''}> Final</label></div>
+      <p class="err" id="tErr" hidden></p>
+      <div class="confirm" id="tDelC" hidden></div>
+      <footer>
+        ${t ? '<button type="button" class="btn danger" id="tDel">Eliminar</button>' : ''}
+        <span class="sp"></span>
+        <button type="button" class="btn" data-x>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const q = s => ov.querySelector(s);
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
+  const done = msg => { save(); close(); toast(msg); const y = window.scrollY; viewTemario(); window.scrollTo(0, y); };
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  q('form').onsubmit = e => {
+    e.preventDefault();
+    const title = q('#tT').value.trim();
+    if (!title) { q('#tErr').textContent = 'Ponle un nombre al tema.'; q('#tErr').hidden = false; return; }
+    const data = { t: title, d: q('#tD').value.trim(), h: q('#tH').value === '' ? 0 : Math.max(0, Number(q('#tH').value) || 0),
+      ex: (q('#tP').checked ? 'p' : '') + (q('#tF').checked ? 'f' : '') };
+    if (t) Object.assign(t, data); else ts.push({ id: newId(), st: 'nuevo', ...data });
+    done(t ? 'Tema actualizado' : 'Tema añadido');
+  };
+  if (q('#tDel')) q('#tDel').onclick = () => {
+    const c = q('#tDelC'); c.hidden = false;
+    c.innerHTML = `<span>¿Eliminar «${esc(t.t)}»?</span><div class="row"><button type="button" class="btn danger" id="dY">Sí, eliminar</button><button type="button" class="btn" id="dN">Cancelar</button></div>`;
+    q('#dN').onclick = () => { c.hidden = true; };
+    q('#dY').onclick = () => { ts.splice(i, 1); done('Tema eliminado'); };
+  };
+  setTimeout(() => { if (!t) q('#tT').focus(); }, 50);
 }
 
 /* ---------- apariencia: automático / claro / oscuro ---------- */
