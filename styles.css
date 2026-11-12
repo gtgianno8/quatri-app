@@ -239,6 +239,14 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .cnow{position:absolute;height:2px;background:var(--bad);z-index:3;pointer-events:none}
 .it{position:relative}
 /* temario */
+.tplan{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.tplan ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.tplan li{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:14px}
+.tplan li span{min-width:0}
+.tplan li small{display:block;font-size:11.5px;color:var(--muted)}
+.tplan li b{font-family:var(--mono);font-size:13px;white-space:nowrap;padding-top:1px}
+.tplan .hint{display:block;margin-top:8px}
+.hint.ok{color:var(--good)}
 .temlink{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;
   border:1px solid var(--line);background:var(--surface-2);font-size:14px;font-weight:600;color:var(--fg);text-align:left}
 .link.back{margin:0 0 6px;padding:6px 0;font-weight:600;color:var(--accent)}

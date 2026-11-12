@@ -1250,8 +1250,28 @@ function weekPlan(monKey) {
 }
 const hfmt = h => num(Math.round(h * 2) / 2) + ' h';
 
+// Bloque "Esta semana toca" de cada asignatura en la pestaña Estudio
+function temPlanHtml(r) {
+  if (r.lv === 'no' || !r.horas || !TM) return '';
+  const P = temasSemana(r.c, r.horas, S.semana, r.ex, r.daysTo);
+  if (!P || !P.out.length) return '';
+  const exName = r.ex ? (r.ex[0] === 'parcial' ? 'el parcial' : 'el final') : null;
+  const ST = Object.fromEntries(TEM_ST);
+  let msg = '';
+  // hasta que no marques cómo llevas los temas, no sabemos cuánto te queda de verdad
+  const marcado = (temasOf(r.c) || []).some(t => t.st !== 'nuevo');
+  if (!marcado) msg = `<small class="hint">Marca en el temario los temas que ya tienes y te diremos si llegas ${exName ? `a ${exName}` : 'a tiempo'}.</small>`;
+  else if (P.capacidad != null) msg = P.total > P.capacidad + 0.5
+    ? `<small class="hint urg">Para ${exName} (en ${r.daysTo} días) te quedan unas ${hfmt(P.total)} de temario y a este ritmo llegas a ${hfmt(P.capacidad)}. Sube las horas o marca lo que ya tienes.</small>`
+    : `<small class="hint ok">A este ritmo llegas a ${exName}: te quedan unas ${hfmt(P.total)} de temario y tienes ${hfmt(P.capacidad)} hasta el examen.</small>`;
+  return `<div class="tplan"><div class="eyebrow">Esta semana toca</div>
+    <ul>${P.out.map(x => `<li><span>${esc(x.t.t)}<small>${ST[x.t.st]}</small></span><b>${hfmt(x.h)}</b></li>`).join('')}</ul>${msg}</div>`;
+}
+
 function viewEstudio() {
   S.semana = S.semana || dkey(mondayOf(new Date()));
+  // el temario de la guía se carga aparte; cuando llega, se vuelve a pintar con "Esta semana toca"
+  if (!TM) loadTemarios().then(() => { if (current() === 'estudio') { const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); } });
   const W = weekPlan(S.semana), E = S.estudio, mon = dparse(S.semana), sun = addDays(mon, 6);
   const thisMon = dkey(mondayOf(new Date()));
   const label = S.semana === thisMon ? 'Esta semana' : S.semana === dkey(addDays(mondayOf(new Date()), 7)) ? 'La semana que viene' : 'Semana';
@@ -1295,6 +1315,7 @@ function viewEstudio() {
           <div class="levels" role="group" aria-label="Cómo la llevas">
             ${LEVELS.map(([id, txt]) => `<button data-l="${r.c}" data-v="${id}" aria-pressed="${r.lv === id}">${txt}</button>`).join('')}
           </div>
+          ${temPlanHtml(r)}
           <button class="temlink" data-tem="${r.c}"><span>Temario${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
           ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
           ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
@@ -1349,6 +1370,36 @@ function temProgress(code) {
   const ts = temasOf(code) || [];
   return { n: ts.length, ok: ts.filter(t => t.st === 'ok').length };
 }
+// ¿Qué temas tocar esta semana? Reparte las horas de la asignatura entre los temas que entran en el próximo examen,
+// según cómo los llevas y hasta dónde ha llegado el curso (no tiene sentido estudiar lo que aún no se ha dado).
+const TEM_NEED = { nuevo: 1, viendo: 0.7, repasar: 0.45, ok: 0.1 };
+const TEM_PRIO = { repasar: 0, viendo: 1, nuevo: 2, ok: 3 };
+function temasSemana(code, horas, monKey, ex, daysTo) {
+  const ts = temasOf(code) || fromGuia(code);
+  if (!ts.length) return null;
+  const c = D.calendario, ini = dparse(c.inicio_clases), fin = dparse(c.fin_clases);
+  const prog = Math.min(1, Math.max(0, (addDays(dparse(monKey), 7) - ini) / (fin - ini)));
+  const dados = Math.max(1, Math.ceil(ts.length * prog)); // temas que más o menos ya se han dado en clase
+  const parcial = ex && ex[0] === 'parcial', near = daysTo != null && daysTo <= 14;
+  const marcaP = ts.some(t => (t.ex || '').includes('p'));
+  const entra = (t, i) => !ex ? true : parcial ? (marcaP ? (t.ex || '').includes('p') : i < dados) : (t.ex || 'f').includes('f');
+  const list = ts.map((t, i) => ({ t, i, dado: i < dados || t.st !== 'nuevo',
+    need: (Number(t.h) || 3) * (t.st === 'ok' && !near ? 0 : TEM_NEED[t.st] ?? 1) }))
+    .filter(x => entra(x.t, x.i) && x.need > 0);
+  const total = list.reduce((n, x) => n + x.need, 0);
+  const cand = list.slice().sort((a, b) => (b.dado - a.dado) || TEM_PRIO[a.t.st] - TEM_PRIO[b.t.st] || a.i - b.i);
+  const out = []; let left = horas;
+  // si hay varios temas pendientes, ninguno se lleva más del 60 % de la semana (mejor tocar dos que uno solo)
+  const cap = cand.length > 1 ? Math.max(1, Math.round(horas * 0.6 * 2) / 2) : horas;
+  for (const x of cand) {
+    if (left < 0.5 || out.length >= 4) break;
+    const give = Math.min(left, cap, Math.max(0.5, Math.round(x.need * 2) / 2));
+    out.push({ t: x.t, h: give }); left -= give;
+  }
+  const semanas = daysTo == null ? null : Math.max(1, Math.ceil(daysTo / 7));
+  return { out, total, semanas, capacidad: semanas ? horas * semanas : null, n: list.length };
+}
+
 function openTemario(code) { S.temCode = code; save(); go('temario'); }
 
 async function viewTemario() {
