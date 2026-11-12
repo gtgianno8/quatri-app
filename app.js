@@ -26,9 +26,11 @@ function load() {
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { toast('No se ha podido guardar en este dispositivo.'); }
 }
+// Bocadillo de información: se cierra solo a los 4 s o al tocarlo.
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 2600);
+  if (!t.dataset.tap) { t.dataset.tap = 1; t.onclick = () => { t.hidden = true; clearTimeout(toast.t); }; }
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
 /* ---------- catálogo ---------- */
@@ -101,7 +103,7 @@ function current() {
   const h = location.hash.slice(1);
   if (!S.grado) return 'grado';
   if (STEPS.includes(h)) return h;
-  if (['hoy', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
+  if (['hoy', 'calendario', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
   return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
 }
 function render() {
@@ -110,7 +112,7 @@ function render() {
   $('#steps').innerHTML = i >= 0 ? STEPS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('') : '';
   $('#view')._swipe = null;
   ({ grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
-     hoy: viewHoy, estudio: viewEstudio, ajustes: viewAjustes })[step]();
+     hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes })[step]();
   window.scrollTo(0, 0);
 }
 function actions(html) {
@@ -543,14 +545,190 @@ function swipe(el, fn) {
 
 /* ---------- pestañas ---------- */
 function tabs(active) {
-  const t = [['hoy', 'Hoy', '◷'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
+  const t = [['hoy', 'Hoy', '◷'], ['calendario', 'Calendario', '▦'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
   actions(`<nav class="tabs">${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     // tocar la pestaña en la que ya estás te devuelve a hoy / esta semana
     if (b.dataset.tab === active && active === 'hoy') { S.dia = dkey(new Date()); save(); viewHoy(); return; }
     if (b.dataset.tab === active && active === 'estudio') { S.semana = dkey(mondayOf(new Date())); save(); viewEstudio(); return; }
+    if (b.dataset.tab === active && active === 'calendario') { calToday(); viewCalendario(); return; }
     go(b.dataset.tab);
   });
+}
+
+/* ---------- calendario: semana y mes ---------- */
+const DOW1 = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+// Abreviaturas cortas para los bloques que no son clases (caben en una columna estrecha del móvil)
+const ABBR = { 'Ida a la uni': ['Ida', 'Ida'], 'Vuelta a casa': ['Vuelta', 'Vuelta'], 'Levantarte y desayunar': ['Desayuno', 'Desay.'],
+  'Comida': ['Comida', 'Comida'], 'Descanso': ['Descanso', 'Desc.'], 'Merienda y pausa': ['Merienda', 'Mer.'], 'Cena': ['Cena', 'Cena'], 'Desconexión': ['Noche', 'Noche'] };
+const abbr = label => { const a = ABBR[label]; return a ? a[window.innerWidth < 600 ? 1 : 0] : label.split(' ')[0]; };
+function calToday() {
+  const now = new Date();
+  S.calSemana = dkey(mondayOf(now));
+  S.calMes = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  save();
+}
+function viewCalendario() {
+  if (!S.calSemana || !S.calMes) calToday();
+  S.calVista = S.calVista || 'semana';
+  const v = $('#view');
+  const isWeek = S.calVista === 'semana';
+  const now = new Date(), thisMon = dkey(mondayOf(now)), thisMes = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  let title, eyebrow, atToday;
+  if (isWeek) {
+    const mon = dparse(S.calSemana), sun = addDays(mon, 6), wt = weekType(S.calSemana) || weekType(dkey(addDays(mon, 2)));
+    title = `${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}`;
+    eyebrow = `${S.calSemana === thisMon ? 'Esta semana' : 'Semana'}${wt ? ` · semana ${wt}` : ''}`;
+    atToday = S.calSemana === thisMon;
+  } else {
+    const [y, m] = S.calMes.split('-').map(Number);
+    title = `${MONTHS[m - 1].charAt(0).toUpperCase() + MONTHS[m - 1].slice(1)} ${y}`;
+    eyebrow = S.calMes === thisMes ? 'Este mes' : 'Mes';
+    atToday = S.calMes === thisMes;
+  }
+  v.innerHTML = `
+    <div class="seg2" role="group" aria-label="Vista">
+      <button data-vista="semana" aria-pressed="${isWeek}">Semana</button>
+      <button data-vista="mes" aria-pressed="${!isWeek}">Mes</button>
+    </div>
+    <div class="dayhead">
+      <button class="icon" id="prev" aria-label="Anterior">‹</button>
+      <div class="dh"><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>
+        ${atToday ? '' : `<button class="todaybtn" id="back">${isWeek ? 'Volver a esta semana' : 'Volver a este mes'}</button>`}</div>
+      <button class="icon" id="next" aria-label="Siguiente">›</button>
+    </div>
+    ${isWeek ? calWeek() : calMonth()}`;
+  const shift = n => {
+    if (isWeek) S.calSemana = dkey(addDays(dparse(S.calSemana), 7 * n));
+    else { const [y, m] = S.calMes.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); S.calMes = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
+    save(); viewCalendario();
+  };
+  $('#prev').onclick = () => slideTo(v, -1, shift);
+  $('#next').onclick = () => slideTo(v, 1, shift);
+  if ($('#back')) $('#back').onclick = () => {
+    const ahead = isWeek ? S.calSemana > thisMon : S.calMes > thisMes;
+    slideTo(v, ahead ? -1 : 1, () => { calToday(); viewCalendario(); });
+  };
+  v.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => {
+    if (b.dataset.vista === S.calVista) return;
+    // al cambiar de vista, mantener la fecha: la semana pasa a su mes y el mes a su primera semana (o la actual)
+    if (b.dataset.vista === 'mes') { const d = addDays(dparse(S.calSemana), 3); S.calMes = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
+    else S.calSemana = S.calMes === thisMes ? thisMon : dkey(mondayOf(dparse(S.calMes + '-01')));
+    S.calVista = b.dataset.vista; save(); viewCalendario();
+  });
+  v.querySelectorAll('[data-day]').forEach(el => el.onclick = e => {
+    if (e.target.closest('.cblk')) return;
+    S.dia = el.dataset.day; save(); go('hoy');
+  });
+  v.querySelectorAll('.cblk').forEach(b => b.onclick = e => { e.stopPropagation(); toast(b.dataset.info); });
+  const rt = $('#rutinaToggle');
+  if (rt) rt.onchange = () => { S.calRutina = rt.checked; save(); viewCalendario(); };
+  swipe(v, shift);
+  tabs('calendario');
+}
+
+function calWeek() {
+  const mon = dparse(S.calSemana), today = dkey(new Date());
+  const days = [0, 1, 2, 3, 4, 5, 6].map(i => { const ds = dkey(addDays(mon, i)); return { ds, p: dayPlan(ds) }; });
+  const showRut = !!S.calRutina;
+  let h0 = 24, h1 = 0;
+  for (const { p } of days) {
+    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen'), ...p.free];
+    for (const b of items) { h0 = Math.min(h0, Math.floor(b.s / 60)); h1 = Math.max(h1, Math.ceil(b.e / 60)); }
+  }
+  if (h0 >= h1) { h0 = 8; h1 = 22; }
+  const hpx = window.innerWidth < 600 ? 34 : 42, px = m => (m - h0 * 60) / 60 * hpx, H = (h1 - h0) * hpx;
+  const narrow = window.innerWidth < 600;
+  const freeWeek = days.reduce((n, d) => n + d.p.freeMin, 0);
+  const cols = days.map(({ ds, p }) => {
+    const items = [];
+    for (const f of p.free) if (f.e - f.s >= 30) items.push({ ...f });
+    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || showRut) items.push(b);
+    const html = items.map(b => {
+      const top = px(b.s), h = Math.max(px(b.e) - top - 1, 6);
+      if (b.kind === 'libre') {
+        const d = dur(b.e - b.s).replace(' min', 'm').replace(' h', 'h').replace(' ', '');
+        return `<div class="cblk libre" style="top:${top}px;height:${h}px" data-info="Libre ${fmt(b.s % 1440)}–${fmt(b.e % 1440)} · ${dur(b.e - b.s)}">${h >= 13 ? `<b>Libre</b>` : ''}${h >= 26 ? `<small>${d}</small>` : ''}</div>`;
+      }
+      if (b.kind === 'clase' || b.kind === 'examen') {
+        const a = subj(b.code), ex = b.kind === 'examen';
+        const tipo = ex ? 'EX' : (b.sub || '').charAt(0);
+        return `<div class="cblk ${b.kind}" style="${colorVars(b.code)};top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s)}–${fmt(b.e)}${b.sub ? ' · ' + esc(b.sub) : ''}">
+          <b>${esc(a.s)}</b>${h > 24 ? `<small>${ex ? 'Examen' : esc(tipo)}</small>` : ''}</div>`;
+      }
+      return `<div class="cblk rut ${b.kind}" style="top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s % 1440)}–${fmt(b.e % 1440)}">${h >= 12 ? `<b>${esc(abbr(b.label))}</b>` : ''}</div>`;
+    }).join('');
+    const nolect = p.info.wd < 5 && !p.info.lective;
+    return `<div class="ccol ${ds === today ? 'is-today' : ''} ${p.info.wd > 4 ? 'we' : ''} ${nolect ? 'nolect' : ''}" data-day="${ds}" style="height:${H}px;--hpx:${hpx}px">${html}</div>`;
+  }).join('');
+  const heads = days.map(({ ds, p }) => {
+    const d = p.info.d;
+    return `<div class="chead ${ds === today ? 'is-today' : ''}" data-day="${ds}"><span>${narrow ? DOW1[p.info.wd] : DAYS_SHORT[p.info.wd]}</span><b>${d.getDate()}</b>
+      <small>${p.freeMin ? dur(p.freeMin).replace(' min', 'm').replace(' h', 'h') : '—'}</small></div>`;
+  }).join('');
+  let hours = ''; for (let h = h0 + 1; h < h1; h++) hours += `<span style="top:${(h - h0) * hpx}px">${h}</span>`;
+  let nowLine = '';
+  const nowD = new Date(), ti = days.findIndex(x => x.ds === today), nm = nowD.getHours() * 60 + nowD.getMinutes();
+  if (ti >= 0 && nm >= h0 * 60 && nm <= h1 * 60) nowLine = `<div class="cnow" style="top:${px(nm)}px;left:calc(30px + (100% - 30px) / 7 * ${ti});width:calc((100% - 30px) / 7)"></div>`;
+  return `
+    <div class="calbar">
+      <span class="pill free-pill"><b>${dur(freeWeek)}</b> libres esta semana</span>
+      <label class="check small"><input type="checkbox" id="rutinaToggle" ${showRut ? 'checked' : ''}> Ver rutina</label>
+    </div>
+    <div class="cweek">
+      <div class="cgrid chead-row"><div></div>${heads}</div>
+      <div class="cgrid cbody"><div class="chours" style="height:${H}px">${hours}</div>${cols}${nowLine}</div>
+    </div>
+    <p class="hint" style="margin-top:10px">En verde, tus huecos libres de al menos 30 min. Toca un bloque para ver el detalle o un día para abrirlo.</p>`;
+}
+
+function calMonth() {
+  const [y, m] = S.calMes.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), start = mondayOf(first), today = dkey(new Date());
+  const codes = S.asignaturas || [];
+  const cells = [], events = [];
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(start, i);
+    if (i % 7 === 0 && i > 0 && d > new Date(y, m, 0)) break; // la última fila llega hasta el domingo
+    const ds = dkey(d), info = dayInfo(ds), inMonth = d.getMonth() === m - 1;
+    const classCodes = info.lective ? [...new Set(mySessions().filter(s => s.x[0] === info.wd && (!(s.x[5] && s.x[5].length === 1) || s.x[5] === info.week)).map(s => s.code))] : [];
+    const exams = codes.flatMap(c => subj(c).e.filter(e => e[1] === ds).map(e => ({ c, e })));
+    const nolect = info.wd < 5 && !info.lective;
+    if (inMonth) {
+      for (const { c, e } of exams) events.push({ ds, kind: 'examen', c, txt: `${e[0] === 'final' ? 'Final' : 'Parcial'} · ${subj(c).n}`, sub: `${e[2]}–${e[3]}` });
+      if (nolect && (D.calendario.dias_sin_clase || []).includes(ds)) {
+        // días sin clase seguidos (saltando el fin de semana) se juntan en un solo aviso
+        const pp = D.calendario.periodo_parciales, parc = pp && ds >= pp[0] && ds <= pp[1];
+        const txt = parc ? 'Sin clases (exámenes parciales)' : 'Sin clases';
+        const last = [...events].reverse().find(ev => ev.kind === 'festivo');
+        const gap = last ? (dparse(ds) - dparse(last.hasta || last.ds)) / 864e5 : 99;
+        if (last && last.txt === txt && (gap === 1 || (gap <= 3 && info.wd === 0))) last.hasta = ds;
+        else events.push({ ds, kind: 'festivo', txt });
+      }
+    }
+    const wk = info.wd === 0 ? weekType(ds) || weekType(dkey(addDays(d, 2))) : null;
+    cells.push(`<button class="mcell ${inMonth ? '' : 'out'} ${ds === today ? 'is-today' : ''} ${nolect ? 'nolect' : ''} ${info.wd > 4 ? 'we' : ''}" data-day="${ds}" aria-label="${DAYS[info.wd]} ${d.getDate()}">
+      <span class="mnum">${d.getDate()}${wk ? `<i class="wkab">${wk}</i>` : ''}</span>
+      ${nolect && !exams.length ? `<span class="mtag">${(D.calendario.periodo_parciales && ds >= D.calendario.periodo_parciales[0] && ds <= D.calendario.periodo_parciales[1]) ? 'Parciales' : (D.calendario.periodo_finales && ds >= D.calendario.periodo_finales[0] && ds <= D.calendario.periodo_finales[1]) ? 'Finales' : 'Sin clase'}</span>` : ''}
+      ${exams.length ? exams.map(({ c }) => `<span class="mex" style="${colorVars(c)}">${esc(subj(c).s)}</span>`).join('') : ''}
+      <span class="mdots">${classCodes.slice(0, 6).map(c => `<i style="${colorVars(c)}"></i>`).join('')}</span>
+    </button>`);
+  }
+  // fin de clases, inicio de finales, etc. del calendario académico
+  const c = D.calendario, marks = [[c.inicio_clases, 'Empiezan las clases'], [c.fin_clases, 'Último día de clase'],
+    [c.periodo_finales?.[0], 'Empieza el período de finales'], [c.periodo_finales?.[1], 'Acaba el período de finales']];
+  for (const [ds, txt] of marks) if (ds && ds.startsWith(S.calMes)) events.push({ ds, kind: 'hito', txt });
+  events.sort((a, b) => a.ds.localeCompare(b.ds));
+  return `
+    <div class="cmonth">
+      ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="mdow">${d}</div>`).join('')}
+      ${cells.join('')}
+    </div>
+    <div class="legend">${codes.filter(hasSchedule).map(c => `<span style="${colorVars(c)}"><i></i>${esc(subj(c).s)}</span>`).join('')}
+      <span><i class="lg-nolect"></i>Sin clases</span></div>
+    ${events.length ? `<section class="card stack" style="margin-top:12px"><div class="eyebrow">Este mes</div>
+      <ul class="mlist">${events.map(ev => { const d = dparse(ev.ds); return `<li class="${ev.kind}" ${ev.c ? `style="${colorVars(ev.c)}"` : ''} data-day="${ev.ds}">
+        <span class="md">${ev.hasta ? `${d.getDate()}–${dparse(ev.hasta).getDate()}` : `${DAYS_SHORT[wdOf(d)]} ${d.getDate()}`}</span><span>${esc(ev.txt)}${ev.sub ? ` <small>${esc(ev.sub)}</small>` : ''}</span></li>`; }).join('')}</ul></section>` : ''}`;
 }
 
 /* ---------- plan de estudio semanal ---------- */
