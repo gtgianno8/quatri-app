@@ -7,7 +7,7 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const DAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const TYPE = { T: 'Teoría', P: 'Problemas', L: 'Laboratorio' };
 const STEPS = ['grado', 'asignaturas', 'grupos', 'semana', 'rutina'];
-const RUTINA_DEF = { trayecto: 30, prep: 60, despertarLibre: '08:30', comida: '14:30', comidaDur: 30, descanso: 30,
+const RUTINA_DEF = { trayecto: 30, prep: 60, volverCasa: 0, despertarLibre: '08:30', comida: '14:30', comidaDur: 30, descanso: 30,
   merienda: false, meriendaHora: '18:30', cena: '21:15', cenaDur: 30, estudiaNoche: false, dormir: '00:00' };
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -176,6 +176,8 @@ function viewAsignaturas() {
         <span class="cr">${a.cr ? num(a.cr) + ' cr' : ''}</span></label>`;
     };
     const byName = (a, b) => subj(a).n.localeCompare(subj(b).n);
+    // ¿todas sus clases empiezan a partir de las 14:00? (las que se dan fuera de su cuatrimestre suelen ir por la tarde)
+    const afternoon = list => { const xs = list.flatMap(c => Object.values(subj(c).g).flatMap(g => g.x)); return xs.length > 0 && xs.every(x => toMin(x[1]) >= 14 * 60); };
     $('#list').innerHTML = Object.keys(byCurso).sort().map(c => {
       const now = byCurso[c].filter(x => subj(x).t !== 'OP' && subj(x).v === nowLevel(c)).sort(byName);
       const other = byCurso[c].filter(x => subj(x).t !== 'OP' && subj(x).v !== nowLevel(c)).sort(byName);
@@ -187,7 +189,7 @@ function viewAsignaturas() {
       return `<section class="curso">
         <div class="curso-head"><h2>${c}º curso</h2>${now.length ? `<button class="btn small" data-all="${c}">${allOn ? 'Quitar' : 'Marcar'} ${c}º · Q${qn}</button>` : ''}</div>
         ${nowHtml}
-        ${other.length ? `<details class="opt" ${q || other.some(x => S.asignaturas.includes(x)) ? 'open' : ''}><summary>Del Q${3 - qn} de ${c}º, que también se dan ahora (${other.length})</summary>${otherHtml}</details>` : ''}
+        ${other.length ? `<details class="opt" ${q || other.some(x => S.asignaturas.includes(x)) ? 'open' : ''}><summary>Del Q${3 - qn} de ${c}º, que también se dan ahora${afternoon(other) ? ' por la tarde' : ''} (${other.length})</summary>${otherHtml}</details>` : ''}
         ${op.length ? `<details class="opt" ${q || op.some(x => S.asignaturas.includes(x)) ? 'open' : ''}><summary>Optativas (${op.length})</summary>${opHtml}</details>` : ''}
       </section>`;
     }).join('') || '<p class="lead">No hay ninguna asignatura con ese nombre.</p>';
@@ -355,6 +357,10 @@ function viewRutina() {
       <section class="card stack"><div class="eyebrow">Ir a la uni</div>
         <div class="fields">
           ${mins('trayecto', '¿Cuánto tardas en llegar?', [5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120], R.trayecto, 'Lo mismo a la vuelta.')}
+          <label class="field"><span>Si tienes un hueco largo entre clases</span>
+            <select id="volverCasa">${[[0, 'Me quedo en la uni'], [120, 'Vuelvo a casa si es de 2 h o más'], [180, 'Vuelvo a casa si es de 3 h o más'], [240, 'Vuelvo a casa si es de 4 h o más']]
+              .map(([m, t]) => `<option value="${m}" ${m === Number(R.volverCasa) ? 'selected' : ''}>${t}</option>`).join('')}</select>
+            <small>Si vuelves, contamos la vuelta y la nueva ida.</small></label>
           ${mins('prep', 'Levantarte, prepararte y desayunar', [15, 30, 45, 60, 75, 90], R.prep)}
           ${time('despertarLibre', 'Días sin clase te levantas a las', R.despertarLibre)}
         </div></section>
@@ -657,6 +663,20 @@ function dayPlan(ds) {
     const first = Math.min(...blocks.map(b => b.s)), last = Math.max(...blocks.map(b => b.e));
     blocks.push({ s: first - T, e: first, kind: 'trayecto', label: 'Ida a la uni' });
     blocks.push({ s: last, e: last + T, kind: 'trayecto', label: 'Vuelta a casa' });
+    // huecos largos entre clases: si el alumno vuelve a casa, son dos trayectos más
+    const VC = Number(R.volverCasa) || 0;
+    if (VC) {
+      const uni = blocks.filter(b => b.kind === 'clase' || b.kind === 'examen').sort((a, b) => a.s - b.s);
+      let end = uni[0].e;
+      for (const b of uni.slice(1)) {
+        const gap = b.s - end;
+        if (gap >= VC && gap >= 2 * T + 30) {
+          blocks.push({ s: end, e: end + T, kind: 'trayecto', label: 'Vuelta a casa' });
+          blocks.push({ s: b.s - T, e: b.s, kind: 'trayecto', label: 'Ida a la uni' });
+        }
+        end = Math.max(end, b.e);
+      }
+    }
     wake = first - T - P;
   } else wake = toMin(R.despertarLibre);
   // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos
@@ -674,15 +694,17 @@ function dayPlan(ds) {
   // si algo empieza antes de lo habitual, te levantas antes
   if (blocks.length) wake = Math.min(wake, Math.min(...blocks.map(b => b.s)) - P);
   blocks.push({ s: wake, e: wake + P, kind: 'rutina', label: 'Levantarte y desayunar' });
-  const place = (start, len, label, kind = 'rutina') => {
+  // maxShift: cuánto se puede retrasar como mucho (la merienda no tiene sentido a las 22:00)
+  const place = (start, len, label, kind = 'rutina', maxShift = Infinity) => {
     let t = start, moved = true;
     while (moved) { moved = false; for (const b of blocks) if (t < b.e && b.s < t + len) { t = b.e; moved = true; } }
-    if (t + len > sleep) return null;
+    if (t + len > sleep || t - start > maxShift) return null;
     const b = { s: t, e: t + len, kind, label }; blocks.push(b); return b;
   };
   const com = place(toMin(R.comida), Number(R.comidaDur), 'Comida');
   if (com && Number(R.descanso)) place(com.e, Number(R.descanso), 'Descanso');
-  if (R.merienda) place(toMin(R.meriendaHora), 30, 'Merienda y pausa');
+  // la merienda va antes de la cena, así que si no cabe cerca de su hora ese día se salta
+  if (R.merienda) place(toMin(R.meriendaHora), 30, 'Merienda y pausa', 'rutina', 90);
   const cen = place(toMin(R.cena), Number(R.cenaDur), 'Cena');
   if (cen && !R.estudiaNoche && cen.e < sleep) blocks.push({ s: cen.e, e: sleep, kind: 'noche', label: 'Desconexión', sub: 'Después de cenar no cuenta para estudiar' });
   blocks.sort((a, b) => a.s - b.s || a.e - b.e);
