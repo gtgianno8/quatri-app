@@ -754,6 +754,29 @@ function viewHoy() {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
   });
+  // línea roja con la hora actual (solo en el día de hoy); se mueve cada minuto
+  clearInterval(viewHoy.t);
+  if (ds === today) {
+    const ul = $('.timeline', v);
+    const putNow = () => {
+      if (!document.body.contains(ul)) { clearInterval(viewHoy.t); return; }
+      ul.querySelectorAll('.nowline,.nowrow').forEach(e => e.remove());
+      const n = new Date(); let nm = n.getHours() * 60 + n.getMinutes();
+      if (nm < p.wake && nm + 1440 < p.sleep + 1) nm += 1440; // pasada la medianoche, antes de dormir
+      const lis = [...ul.children];
+      let k = -1; items.forEach((it, i) => { if (it.s <= nm && nm < it.e) k = i; });
+      if (k >= 0) {
+        const it = items[k];
+        lis[k].insertAdjacentHTML('beforeend', `<i class="nowline" style="top:${((nm - it.s) / (it.e - it.s) * 100).toFixed(1)}%"></i>`);
+      } else {
+        const row = '<li class="nowrow" aria-hidden="true"><i class="nowline"></i></li>';
+        const j = items.findIndex(it => it.s > nm);
+        if (j >= 0) lis[j].insertAdjacentHTML('beforebegin', row); else ul.insertAdjacentHTML('beforeend', row);
+      }
+    };
+    putNow();
+    viewHoy.t = setInterval(putNow, 60000);
+  }
   swipe(v, shift);
   tabs('hoy');
   fab(() => S.dia);

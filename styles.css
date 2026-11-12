@@ -237,6 +237,13 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .cblk.rut.trayecto{background:repeating-linear-gradient(135deg,var(--surface-2) 0 4px,var(--surface) 4px 8px);border-left-color:var(--muted)}
 .cblk.rut.noche{background:color-mix(in srgb,var(--s6) 18%,var(--surface));border-left-color:var(--s6)}
 .cnow{position:absolute;height:2px;background:var(--bad);z-index:3;pointer-events:none}
+.it{position:relative}
+.nowline{position:absolute;left:63px;right:0;height:2px;margin-top:-1px;
+  /* sólida al principio y muy suave después, para que se lea el texto que hay debajo */
+  background:linear-gradient(90deg,var(--bad) 0 16px,color-mix(in srgb,var(--bad) 28%,transparent) 40px);z-index:2;pointer-events:none}
+.nowline::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--bad)}
+.nowrow{position:relative;height:2px;margin:2px 0}
+.nowrow .nowline{top:0}
 .cnow::before{content:"";position:absolute;left:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--bad)}
 @media (min-width:600px){.cgrid{grid-template-columns:44px repeat(7,minmax(0,1fr))}.cblk{font-size:11.5px;padding:3px 5px}.cblk b{font-size:12px}.cblk small{font-size:10px}.chours span{font-size:11px}}
 
