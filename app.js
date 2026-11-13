@@ -1532,9 +1532,14 @@ async function viewTemario() {
       ${TM?.[code] && ts.length ? '<button class="btn" id="tReset">Volver al temario de la guía</button>' : ''}
     </div>
     ${exams.length ? `<p class="hint" style="margin-top:14px">Marca en cada tema si entra en el ${exams.includes('parcial') ? 'parcial, en el ' : ''}final: así sabremos qué preparar para cada examen.</p>` : ''}
-    <div class="confirm" id="tConf" hidden style="margin-top:10px"></div>`;
+    <div class="confirm" id="tConf" hidden style="margin-top:10px"></div>
+    <div class="tem-foot">
+      <small class="hint">Todo lo que cambias aquí se guarda solo.</small>
+      <button class="btn primary" id="tBack2">‹ Volver a Estudio</button>
+    </div>`;
   const rerender = () => { save(); const y = window.scrollY; viewTemario(); window.scrollTo(0, y); };
   $('#tBack').onclick = () => go('estudio');
+  $('#tBack2').onclick = () => go('estudio');
   v.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
     const i = +b.closest('[data-i]').dataset.i; ts[i].st = b.dataset.st; rerender();
   });

@@ -283,6 +283,7 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .tema-st button[data-st="ok"][aria-pressed="true"]{background:var(--good-soft);border-color:var(--good);color:var(--good)}
 .tema-st button[data-st="viendo"][aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .tema-st button[data-st="repasar"][aria-pressed="true"]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.tem-foot{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:22px;padding-top:14px;border-top:1px solid var(--line);text-align:center}
 .tema-tags .out{font-family:var(--font);font-weight:600;color:var(--muted);background:transparent;border:1px dashed var(--line)}
 .tema.fuera{opacity:.55}
 .tema.st-ok{border-left:4px solid var(--good)}
