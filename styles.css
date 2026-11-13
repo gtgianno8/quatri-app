@@ -238,6 +238,20 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .cblk.rut.noche{background:color-mix(in srgb,var(--s6) 18%,var(--surface));border-left-color:var(--s6)}
 .cnow{position:absolute;height:2px;background:var(--bad);z-index:3;pointer-events:none}
 .it{position:relative}
+/* exámenes propios y cuánto prepararte */
+.seg2.four button{height:auto;min-height:40px;padding:5px 2px;font-size:12.5px;line-height:1.15;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.seg2.four button small{font-size:10.5px;color:var(--muted);font-weight:400;margin-top:1px}
+.exrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;border-radius:12px;border:1px solid var(--line);
+  border-left:4px solid var(--c);background:var(--surface);color:var(--fg)}
+.exrow .md{font-family:var(--mono);font-size:12.5px;min-width:62px;color:var(--muted)}
+.exrow span:nth-child(2){flex:1;min-width:0}
+.exrow b{display:block;font-weight:700}
+.exrow small{display:block;color:var(--muted);font-size:12.5px}
+.exrow:not([data-exid]){cursor:default}
+.exrow.past{opacity:.5}
+.finalmodo{margin-top:8px}
+.xtemas{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.xtemas .check{font-size:14px}
 /* temario */
 .tplan{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .tplan ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}

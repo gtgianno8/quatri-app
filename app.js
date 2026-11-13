@@ -473,7 +473,7 @@ function viewListo() {
   const week = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
   const freeMin = week.reduce((n, p) => n + p.freeMin, 0), classMin = week.reduce((n, p) => n + p.classMin, 0);
   const tk = dkey(today);
-  const ex = (S.asignaturas || []).flatMap(c => subj(c).e.filter(e => e[1] >= tk).map(e => ({ c, e })))
+  const ex = (S.asignaturas || []).flatMap(c => examsOf(c).filter(e => e[1] >= tk).map(e => ({ c, e })))
     .sort((a, b) => a.e[1].localeCompare(b.e[1]))[0];
   const exDays = ex ? Math.round((dparse(ex.e[1]) - dparse(tk)) / 864e5) : null;
   const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -807,8 +807,10 @@ function dayPlan(ds) {
         label: `Estudio · ${subj(s.code).n}`, sub: f.estudio === 'uni' ? 'En la uni, en vez de ir a clase' : 'En casa, en vez de ir a clase' });
     }
   }
-  for (const c of S.asignaturas || []) for (const e of subj(c).e) {
-    if (e[1] === ds) blocks.push({ s: toMin(e[2]), e: toMin(e[3]), kind: 'examen', code: c, label: `Examen ${e[0]} · ${subj(c).n}`, sub: e[4] });
+  for (const c of S.asignaturas || []) for (const e of examsOf(c)) {
+    if (e[1] !== ds || !e[2] || !e[3]) continue; // las entregas sin hora no ocupan tiempo
+    blocks.push({ s: toMin(e[2]), e: toMin(e[3]), kind: 'examen', code: c, exId: e[5] || null,
+      label: e[5] ? `${exName(e)} · ${subj(c).n}` : `Examen ${e[0]} · ${subj(c).n}`, sub: e[4] });
   }
   const T = Number(R.trayecto), P = Number(R.prep);
   let sleep = toMin(R.dormir || '00:00'); if (sleep < 6 * 60) sleep += 1440;
@@ -896,7 +898,7 @@ function viewHoy() {
     const style = it.code ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : it.kind === 'saltada' ? `No vas · ${esc(it.label)}` : esc(it.label);
     if (it.kind === 'saltada') it = { ...it, sub: `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}` };
-    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
     return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
       <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
   };
@@ -923,6 +925,7 @@ function viewHoy() {
   v.querySelectorAll('[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
   v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
   v.querySelectorAll('[data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
+  v.querySelectorAll('[data-exam]').forEach(el => el.onclick = () => openExamen(el.dataset.code, el.dataset.exam));
   v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
@@ -1167,10 +1170,10 @@ function calMonth() {
     if (i % 7 === 0 && i > 0 && d > new Date(y, m, 0)) break; // la última fila llega hasta el domingo
     const ds = dkey(d), info = dayInfo(ds), inMonth = d.getMonth() === m - 1;
     const classCodes = info.lective ? [...new Set(mySessions().filter(s => s.x[0] === info.wd && (!(s.x[5] && s.x[5].length === 1) || s.x[5] === info.week)).map(s => s.code))] : [];
-    const exams = codes.flatMap(c => subj(c).e.filter(e => e[1] === ds).map(e => ({ c, e })));
+    const exams = codes.flatMap(c => examsOf(c).filter(e => e[1] === ds).map(e => ({ c, e })));
     const nolect = info.wd < 5 && !info.lective;
     if (inMonth) {
-      for (const { c, e } of exams) events.push({ ds, kind: 'examen', c, txt: `${e[0] === 'final' ? 'Final' : 'Parcial'} · ${subj(c).n}`, sub: `${e[2]}–${e[3]}` });
+      for (const { c, e } of exams) events.push({ ds, kind: 'examen', c, txt: `${exName(e)} · ${subj(c).n}`, sub: e[2] ? `${e[2]}–${e[3]}` : '' });
       if (nolect && (D.calendario.dias_sin_clase || []).includes(ds)) {
         // días sin clase seguidos (saltando el fin de semana) se juntan en un solo aviso
         const pp = D.calendario.periodo_parciales, parc = pp && ds >= pp[0] && ds <= pp[1];
@@ -1207,16 +1210,32 @@ function calMonth() {
         <span class="md">${ev.hasta ? `${d.getDate()}–${dparse(ev.hasta).getDate()}` : `${DAYS_SHORT[wdOf(d)]} ${d.getDate()}`}</span><span>${esc(ev.txt)}${ev.sub ? ` <small>${esc(ev.sub)}</small>` : ''}</span></li>`; }).join('')}</ul></section>` : ''}`;
 }
 
+/* ---------- cuánto prepararte y exámenes propios ---------- */
+// Las horas de la guía docente son generosas: el alumno elige qué parte de ellas quiere cubrir.
+const RITMOS = [[0.45, 'Lo justo'], [0.6, 'Normal'], [0.8, 'Bien preparado'], [1, 'Lo que dice la guía']];
+const ritmo = () => S.ritmo ?? 0.6;
+// Exámenes que añade el alumno (controles, evaluación continua...): S.examenes[id] = { code, tipo, nombre, fecha, ini, fin, temas: [ids] }
+const EX_TIPOS = [['control', 'Control'], ['parcial', 'Parcial'], ['final', 'Final'], ['entrega', 'Entrega']];
+// Todos los exámenes de una asignatura con el mismo formato: [tipo, fecha, ini, fin, aulas, id propio, nombre, temas]
+function examsOf(c) {
+  const own = Object.entries(S.examenes || {}).filter(([, x]) => x.code === c)
+    .map(([id, x]) => [x.tipo, x.fecha, x.ini || '', x.fin || '', x.lugar || '', id, x.nombre || '', x.temas || []]);
+  return [...subj(c).e, ...own];
+}
+const exName = e => e[6] || (EX_TIPOS.find(t => t[0] === e[0])?.[1] || e[0]);
+// "el parcial" / "el final" para los oficiales; «Control 1» para los que añade el alumno
+const exRef = e => e[5] ? `«${exName(e)}»` : `el ${e[0]}`;
+
 /* ---------- plan de estudio semanal ---------- */
 const LEVELS = [['bien', 'Bien', 0.7], ['normal', 'Normal', 1], ['cuesta', 'Me cuesta', 1.4], ['no', 'No la estudio', 0]];
 // Por defecto "Normal"; si la asignatura no tiene exámenes (como Ampliació d'Informàtica), empieza en "No la estudio".
-const levelOf = c => (S.estudio?.nivel || {})[c] || (subj(c).e.length ? 'normal' : 'no');
+const levelOf = c => (S.estudio?.nivel || {})[c] || (examsOf(c).length ? 'normal' : 'no');
 function classWeeks() {
   const c = D.calendario;
   return Math.max(1, (dparse(c.fin_clases) - dparse(c.inicio_clases)) / (7 * 864e5));
 }
 function nextExam(code, fromKey) {
-  return subj(code).e.filter(e => e[1] >= fromKey).sort((a, b) => a[1].localeCompare(b[1]))[0] || null;
+  return examsOf(code).filter(e => e[1] >= fromKey).sort((a, b) => a[1].localeCompare(b[1]))[0] || null;
 }
 function weekPlan(monKey) {
   S.estudio = S.estudio || { nivel: {}, ajuste: {} };
@@ -1234,7 +1253,7 @@ function weekPlan(monKey) {
     return { c, a, lv, oficial, ex, daysTo, w: oficial * f * urg };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
-  const sugerido = Math.max(1, Math.min(Math.round(freeMin / 60 * 0.4), Math.round(oficialTotal * 0.6)));
+  const sugerido = Math.max(1, Math.min(Math.round(freeMin / 60 * 0.4), Math.round(oficialTotal * ritmo())));
   const objetivo = E.objetivo ?? sugerido;
   const fixed = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] != null);
   const auto = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] == null);
@@ -1255,15 +1274,16 @@ function temPlanHtml(r) {
   if (r.lv === 'no' || !r.horas || !TM) return '';
   const P = temasSemana(r.c, r.horas, S.semana, r.ex, r.daysTo);
   if (!P || !P.out.length) return '';
-  const exName = r.ex ? (r.ex[0] === 'parcial' ? 'el parcial' : 'el final') : null;
+  const ref = r.ex ? (r.ex[0] === 'final' && !r.ex[5] && finalModo(r.c) === 'segunda' ? 'el segundo parcial' : exRef(r.ex)) : null;
+  const aRef = ref ? (ref.startsWith('el ') ? 'al ' + ref.slice(3) : 'a ' + ref) : 'a tiempo';
   const ST = Object.fromEntries(TEM_ST);
   let msg = '';
   // hasta que no marques cómo llevas los temas, no sabemos cuánto te queda de verdad
   const marcado = (temasOf(r.c) || []).some(t => t.st !== 'nuevo');
-  if (!marcado) msg = `<small class="hint">Marca en el temario los temas que ya tienes y te diremos si llegas ${exName ? `a ${exName}` : 'a tiempo'}.</small>`;
+  if (!marcado) msg = `<small class="hint">Marca en el temario los temas que ya tienes y te diremos si llegas ${aRef}.</small>`;
   else if (P.capacidad != null) msg = P.total > P.capacidad + 0.5
-    ? `<small class="hint urg">Para ${exName} (en ${r.daysTo} días) te quedan unas ${hfmt(P.total)} de temario y a este ritmo llegas a ${hfmt(P.capacidad)}. Sube las horas o marca lo que ya tienes.</small>`
-    : `<small class="hint ok">A este ritmo llegas a ${exName}: te quedan unas ${hfmt(P.total)} de temario y tienes ${hfmt(P.capacidad)} hasta el examen.</small>`;
+    ? `<small class="hint urg">Para ${ref} (en ${r.daysTo} días) te quedan unas ${hfmt(P.total)} de temario y a este ritmo llegas a ${hfmt(P.capacidad)}. Sube las horas o marca lo que ya tienes.</small>`
+    : `<small class="hint ok">A este ritmo llegas ${aRef}: te quedan unas ${hfmt(P.total)} de temario y tienes ${hfmt(P.capacidad)} hasta el examen.</small>`;
   return `<div class="tplan"><div class="eyebrow">Esta semana toca</div>
     <ul>${P.out.map(x => `<li><span>${esc(x.t.t)}<small>${ST[x.t.st]}</small></span><b>${hfmt(x.h)}</b></li>`).join('')}</ul>${msg}</div>`;
 }
@@ -1296,7 +1316,10 @@ function viewEstudio() {
         <output id="obj">${hfmt(W.objetivo)}</output>
         <button id="oPlus" aria-label="Más horas">+</button>
       </div>
-      <small class="hint">Te proponemos ${hfmt(W.sugerido)}: un 40 % de tus horas libres, sin pasar del 60 % de lo que pide la guía docente (${hfmt(W.oficialTotal)} a la semana).${E.objetivo != null && E.objetivo !== W.sugerido ? ' <button class="link" id="oReset">Volver a la propuesta</button>' : ''}</small>
+      <small class="hint">Te proponemos ${hfmt(W.sugerido)}: un 40 % de tus horas libres, sin pasar del ${Math.round(ritmo() * 100)} % de lo que pide la guía docente (${hfmt(W.oficialTotal)} a la semana).${E.objetivo != null && E.objetivo !== W.sugerido ? ' <button class="link" id="oReset">Volver a la propuesta</button>' : ''}</small>
+      <div class="field" style="margin-top:4px"><span>¿Cuánto quieres prepararte?</span>
+        <div class="seg2 four" role="group" style="margin:0">${RITMOS.map(([f, t]) => `<button data-ritmo="${f}" aria-pressed="${ritmo() === f}">${t}<small>${Math.round(f * 100)} %</small></button>`).join('')}</div>
+        <small>Las horas de la guía docente son generosas y casi nadie las hace todas. Elige qué parte quieres cubrir.</small></div>
       ${over ? `<div class="notice bad">Has planificado más horas de las que tienes libres. Baja el objetivo o revisa tu rutina.</div>` : ''}
       ${W.total !== W.objetivo ? `<div class="notice warn">Con tus ajustes suman ${hfmt(W.total)}, no ${hfmt(W.objetivo)}.</div>` : ''}
     </section>
@@ -1308,7 +1331,7 @@ function viewEstudio() {
           <div class="sp-head">
             <span class="bar"></span>
             <div class="sp-name"><b>${esc(r.a.n)}</b>
-              <small>${r.a.cr ? num(r.a.cr) + ' cr · ' : ''}guía: ${hfmt(r.oficial)}/sem${r.ex ? ` · ${r.ex[0]} en ${r.daysTo} días` : ''}</small></div>
+              <small>${r.a.cr ? num(r.a.cr) + ' cr · ' : ''}guía: ${hfmt(r.oficial)}/sem${r.ex ? ` · ${esc(exName(r.ex).toLowerCase())} en ${r.daysTo} días` : ''}</small></div>
             ${r.lv === 'no' ? '' : `<div class="stepper">
               <button data-m="${r.c}" aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p="${r.c}" aria-label="Más">+</button></div>`}
           </div>
@@ -1316,7 +1339,7 @@ function viewEstudio() {
             ${LEVELS.map(([id, txt]) => `<button data-l="${r.c}" data-v="${id}" aria-pressed="${r.lv === id}">${txt}</button>`).join('')}
           </div>
           ${temPlanHtml(r)}
-          <button class="temlink" data-tem="${r.c}"><span>Temario${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
+          <button class="temlink" data-tem="${r.c}"><span>Temario y exámenes${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
           ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
           ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
         </div>`).join('')}
@@ -1333,6 +1356,7 @@ function viewEstudio() {
   });
   v.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { delete E.ajuste[b.dataset.r]; rerender(); });
   v.querySelectorAll('[data-tem]').forEach(b => b.onclick = () => openTemario(b.dataset.tem));
+  v.querySelectorAll('[data-ritmo]').forEach(b => b.onclick = () => { S.ritmo = Number(b.dataset.ritmo); rerender(); });
   v.querySelectorAll('[data-l]').forEach(b => b.onclick = () => {
     E.nivel[b.dataset.l] = b.dataset.v; if (b.dataset.v === 'no') delete E.ajuste[b.dataset.l]; rerender();
   });
@@ -1372,6 +1396,20 @@ function temProgress(code) {
 }
 // ¿Qué temas tocar esta semana? Reparte las horas de la asignatura entre los temas que entran en el próximo examen,
 // según cómo los llevas y hasta dónde ha llegado el curso (no tiene sentido estudiar lo que aún no se ha dado).
+// Temas de la primera parte (los del parcial): los marcados "Parcial"; si no hay ninguno marcado,
+// los que se habrán dado en clase el día del parcial.
+function parcialSet(code, ts) {
+  if (ts.some(t => (t.ex || '').includes('p'))) return new Set(ts.map((t, i) => (t.ex || '').includes('p') ? i : -1).filter(i => i >= 0));
+  const p = examsOf(code).filter(e => e[0] === 'parcial').sort((a, b) => a[1].localeCompare(b[1]))[0];
+  if (!p) return new Set();
+  const c = D.calendario, ini = dparse(c.inicio_clases), fin = dparse(c.fin_clases);
+  const prog = Math.min(1, Math.max(0, (dparse(p[1]) - ini) / (fin - ini)));
+  const n = Math.round(ts.length * prog);
+  return new Set([...Array(n).keys()]);
+}
+// En el final: 'todo' (final entero o recuperación del parcial) o 'segunda' (solo el segundo parcial).
+// En el GRETI no hay recuperaciones después de los finales, así que esto se decide tras el parcial.
+const finalModo = code => (S.finalModo || {})[code] || 'todo';
 const TEM_NEED = { nuevo: 1, viendo: 0.7, repasar: 0.45, ok: 0.1 };
 const TEM_PRIO = { repasar: 0, viendo: 1, nuevo: 2, ok: 3 };
 function temasSemana(code, horas, monKey, ex, daysTo) {
@@ -1380,11 +1418,16 @@ function temasSemana(code, horas, monKey, ex, daysTo) {
   const c = D.calendario, ini = dparse(c.inicio_clases), fin = dparse(c.fin_clases);
   const prog = Math.min(1, Math.max(0, (addDays(dparse(monKey), 7) - ini) / (fin - ini)));
   const dados = Math.max(1, Math.ceil(ts.length * prog)); // temas que más o menos ya se han dado en clase
-  const parcial = ex && ex[0] === 'parcial', near = daysTo != null && daysTo <= 14;
-  const marcaP = ts.some(t => (t.ex || '').includes('p'));
-  const entra = (t, i) => !ex ? true : parcial ? (marcaP ? (t.ex || '').includes('p') : i < dados) : (t.ex || 'f').includes('f');
+  const near = daysTo != null && daysTo <= 14;
+  const sel = ex?.[7] || []; // temas que el alumno ha marcado para un control suyo
+  const pset = parcialSet(code, ts);
+  // qué entra: los temas elegidos; si no, en el parcial lo de la primera parte; en el final todo
+  // o solo la segunda parte (según lo que elija el alumno); y en un control lo que se ha dado hasta ahora
+  const entra = (t, i) => !ex ? true : sel.length ? sel.includes(t.id)
+    : ex[0] === 'final' ? (finalModo(code) === 'segunda' ? !pset.has(i) : true)
+    : ex[0] === 'parcial' ? (pset.size ? pset.has(i) : i < dados) : i < dados;
   const list = ts.map((t, i) => ({ t, i, dado: i < dados || t.st !== 'nuevo',
-    need: (Number(t.h) || 3) * (t.st === 'ok' && !near ? 0 : TEM_NEED[t.st] ?? 1) }))
+    need: (Number(t.h) || 3) * ritmo() * (t.st === 'ok' && !near ? 0 : TEM_NEED[t.st] ?? 1) }))
     .filter(x => entra(x.t, x.i) && x.need > 0);
   const total = list.reduce((n, x) => n + x.need, 0);
   const cand = list.slice().sort((a, b) => (b.dado - a.dado) || TEM_PRIO[a.t.st] - TEM_PRIO[b.t.st] || a.i - b.i);
@@ -1424,7 +1467,32 @@ async function viewTemario() {
       <div class="pbar"><i style="width:${pr.n ? Math.round(pr.ok / pr.n * 100) : 0}%"></i></div></div>` : ''}
     ${T.guia ? `<p class="hint">Sacado de la guía docente oficial. Si tu profesor lo da distinto, toca un tema para cambiarlo.</p>`
       : `<div class="notice warn">Esta asignatura no tiene temario en la guía docente. Añade los temas que estáis dando.</div>`}
-    <div class="stack" style="margin-top:12px">${ts.map((t, i) => `
+    <h2 class="sec">Exámenes</h2>
+    <div class="stack">${examsOf(code).sort((x, y) => x[1].localeCompare(y[1])).map(e => { const d = dparse(e[1]); return `
+      <button class="exrow${e[1] < dkey(new Date()) ? ' past' : ''}" style="${colorVars(code)}" ${e[5] ? `data-exid="${e[5]}"` : ''}>
+        <span class="md">${DAYS_SHORT[wdOf(d)]} ${d.getDate()}/${d.getMonth() + 1}</span>
+        <span><b>${esc(exName(e))}</b><small>${e[2] ? `${e[2]}–${e[3]}` : 'Sin hora'}${e[5] ? (e[7]?.length ? ` · ${e[7].length} temas` : '') : ' · oficial'}</small></span>
+        ${e[5] ? '<span aria-hidden="true">›</span>' : ''}</button>`; }).join('') || '<p class="hint">No hay exámenes oficiales en el calendario.</p>'}</div>
+    ${(() => {
+      const ex = examsOf(code);
+      if (!ex.some(e => e[0] === 'final') || !ex.some(e => e[0] === 'parcial') || !ts.length) return '';
+      const ps = parcialSet(code, ts), m = finalModo(code);
+      const rng = idx => idx.length ? (idx.length === 1 ? `el tema ${idx[0] + 1}` : `los temas ${idx[0] + 1} a ${idx[idx.length - 1] + 1}`) : 'ningún tema';
+      const p1 = [...ps].sort((a, b) => a - b), p2 = ts.map((_, i) => i).filter(i => !ps.has(i));
+      return `<div class="card stack finalmodo">
+        <div class="eyebrow">¿Qué harás en el final?</div>
+        <div class="seg2" role="group" style="margin:0">
+          <button data-fm="todo" aria-pressed="${m === 'todo'}">Todo el temario</button>
+          <button data-fm="segunda" aria-pressed="${m === 'segunda'}">Solo la 2ª parte</button>
+        </div>
+        <small class="hint">${m === 'segunda'
+          ? `Haces solo el segundo parcial: estudias ${rng(p2)} (la nota del parcial ya te cuenta).`
+          : `Final entero o recuperar el parcial el mismo día: entra todo, ${rng(p1)} del parcial y ${rng(p2)} después. Si el parcial te va bien y puedes hacer solo el segundo parcial, elige «Solo la 2ª parte».`}</small>
+      </div>`;
+    })()}
+    <button class="btn" id="tAddEx" style="margin-top:8px">+ Añadir control o examen</button>
+    <h2 class="sec">Temas</h2>
+    <div class="stack" style="margin-top:8px">${ts.map((t, i) => `
       <div class="card tema st-${t.st}" data-i="${i}">
         <button class="tema-main" data-edit="${i}">
           <b>${esc(t.t)}</b>
@@ -1447,6 +1515,9 @@ async function viewTemario() {
   });
   v.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openTema(code, +b.dataset.edit));
   $('#tAdd').onclick = () => openTema(code, null);
+  $('#tAddEx').onclick = () => openExamen(code, null);
+  v.querySelectorAll('[data-fm]').forEach(b => b.onclick = () => { S.finalModo = S.finalModo || {}; S.finalModo[code] = b.dataset.fm; rerender(); });
+  v.querySelectorAll('[data-exid]').forEach(b => b.onclick = () => openExamen(code, b.dataset.exid));
   if ($('#tReset')) $('#tReset').onclick = async () => {
     const c = $('#tConf'); c.hidden = false;
     c.innerHTML = `<span>Se perderán tus cambios y lo que has marcado en cada tema. ¿Seguro?</span><div class="row">
@@ -1503,6 +1574,69 @@ function openTema(code, i) {
     q('#dY').onclick = () => { ts.splice(i, 1); done('Tema eliminado'); };
   };
   setTimeout(() => { if (!t) q('#tT').focus(); }, 50);
+}
+
+// Añadir o editar un control / examen propio, con los temas que entran
+function openExamen(code, id, after) {
+  S.examenes = S.examenes || {};
+  const x = id ? S.examenes[id] : null, ts = temasOf(code) || [];
+  const F = { tipo: x?.tipo || 'control', temas: new Set(x?.temas || []) };
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `
+    <form class="sheet" novalidate style="${colorVars(code)}">
+      <header><h2>${x ? 'Editar' : 'Nuevo'} examen · ${esc(subj(code).s)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <div class="field"><span>Tipo</span><div class="seg2 four" role="group" style="margin:0">${EX_TIPOS.map(([k, n]) => `<button type="button" data-tipo="${k}">${n}</button>`).join('')}</div></div>
+      <label class="field"><span>Nombre (opcional)</span><input id="xN" maxlength="50" value="${esc(x?.nombre || '')}" placeholder="Ej.: Control 2 · Tema 3" autocomplete="off"></label>
+      <label class="field"><span>Día</span><input type="date" id="xD" value="${x?.fecha || ''}"></label>
+      <div class="fields">
+        <label class="field"><span>Empieza</span><input type="time" id="xI" step="300" value="${x?.ini || ''}"></label>
+        <label class="field"><span>Acaba</span><input type="time" id="xF" step="300" value="${x?.fin || ''}"></label>
+      </div>
+      <small class="hint" id="xHint"></small>
+      ${ts.length ? `<div class="field"><span>Temas que entran</span>
+        <div class="xtemas">${ts.map(t => `<label class="check"><input type="checkbox" data-t="${esc(t.id)}" ${F.temas.has(t.id) ? 'checked' : ''}> ${esc(t.t)}</label>`).join('')}</div>
+        <small>Si no marcas ninguno, contamos lo que se ha dado en clase hasta ese día.</small></div>` : ''}
+      <p class="err" id="xErr" hidden></p>
+      <div class="confirm" id="xDelC" hidden></div>
+      <footer>
+        ${x ? '<button type="button" class="btn danger" id="xDel">Eliminar</button>' : ''}
+        <span class="sp"></span>
+        <button type="button" class="btn" data-x>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const q = s => ov.querySelector(s);
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
+  const done = msg => { save(); close(); toast(msg); if (after) after(); else { const y = window.scrollY; render(); window.scrollTo(0, y); } };
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  const paint = () => {
+    ov.querySelectorAll('[data-tipo]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tipo === F.tipo)));
+    q('#xHint').textContent = F.tipo === 'entrega' ? 'Para una entrega, la hora es opcional.' : 'Ocupa ese rato en tu día y cuenta el trayecto a la uni.';
+  };
+  ov.querySelectorAll('[data-tipo]').forEach(b => b.onclick = () => { F.tipo = b.dataset.tipo; paint(); });
+  ov.querySelectorAll('[data-t]').forEach(c => c.onchange = () => { c.checked ? F.temas.add(c.dataset.t) : F.temas.delete(c.dataset.t); });
+  paint();
+  const err = m => { q('#xErr').textContent = m; q('#xErr').hidden = false; };
+  q('form').onsubmit = e => {
+    e.preventDefault();
+    const fecha = q('#xD').value, ini = q('#xI').value, fin = q('#xF').value;
+    if (!fecha) return err('Elige el día.');
+    if (F.tipo !== 'entrega' && (!ini || !fin)) return err('Indica a qué hora empieza y acaba.');
+    if (ini && fin && toMin(fin) <= toMin(ini)) return err('La hora de fin tiene que ser posterior a la de inicio.');
+    if (!!ini !== !!fin) return err('Pon la hora de inicio y la de fin, o ninguna.');
+    S.examenes[id || newId()] = { code, tipo: F.tipo, nombre: q('#xN').value.trim(), fecha, ini, fin, temas: [...F.temas] };
+    done(x ? 'Examen actualizado' : 'Examen añadido');
+  };
+  if (q('#xDel')) q('#xDel').onclick = () => {
+    const c = q('#xDelC'); c.hidden = false;
+    c.innerHTML = `<span>¿Eliminar este examen?</span><div class="row"><button type="button" class="btn danger" id="dY">Sí, eliminar</button><button type="button" class="btn" id="dN">Cancelar</button></div>`;
+    q('#dN').onclick = () => { c.hidden = true; };
+    q('#dY').onclick = () => { delete S.examenes[id]; done('Examen eliminado'); };
+  };
 }
 
 /* ---------- apariencia: automático / claro / oscuro ---------- */
