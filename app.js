@@ -25,8 +25,10 @@ function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
 }
 function save() {
+  PLAN_CACHE = {}; // cualquier cambio puede mover el estudio colocado en la semana
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { toast('No se ha podido guardar en este dispositivo.'); }
 }
+let PLAN_CACHE = {};
 // Bocadillo de información: se cierra solo a los 4 s o al tocarlo.
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -107,7 +109,7 @@ function current() {
   if (h === 'listo' && S.listo) return h;
   if (STEPS.includes(h)) return h;
   if (h === 'temario') return S.listo && S.temCode && subj(S.temCode) ? h : (S.listo ? 'estudio' : 'grado');
-  if (['hoy', 'calendario', 'estudio', 'ajustes'].includes(h)) return S.listo ? h : 'grado';
+  if (['hoy', 'calendario', 'estudio', 'ajustes', 'rutinaex'].includes(h)) return S.listo ? h : 'grado';
   return S.listo ? 'hoy' : (S.asignaturas?.length ? 'asignaturas' : 'grado');
 }
 function render() {
@@ -117,7 +119,7 @@ function render() {
   $('#view')._swipe = null;
   if ($('#fab')) $('#fab').hidden = true;
   ({ bienvenida: viewBienvenida, listo: viewListo, grado: viewGrado, asignaturas: viewAsignaturas, grupos: viewGrupos, semana: viewSemana, rutina: viewRutina,
-     hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes, temario: viewTemario })[step]();
+     hoy: viewHoy, calendario: viewCalendario, estudio: viewEstudio, ajustes: viewAjustes, temario: viewTemario, rutinaex: viewRutinaEx })[step]();
   window.scrollTo(0, 0);
 }
 function actions(html) {
@@ -680,6 +682,50 @@ function openClase(ds, ck) {
   };
 }
 
+/* ---------- bloques de estudio propuestos por Quatri ---------- */
+function sheet(html) {
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+  ov.innerHTML = `<form class="sheet" novalidate>${html}</form>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const close = () => { ov.remove(); document.body.style.overflow = ''; };
+  ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  return { q: s => ov.querySelector(s), close };
+}
+function openPlan(ds, s, e, code, tema) {
+  const d = dparse(ds);
+  const { q, close } = sheet(`
+    <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <p class="hint" style="margin:-6px 0 0">${DAYS[wdOf(d)]} ${d.getDate()} · ${fmt(s % 1440)}–${fmt(e % 1440)}${tema ? ` · ${esc(tema)}` : ''}</p>
+    <p style="margin:0">Es una propuesta de Quatri para llegar bien al examen. Cuando lo hayas hecho, márcalo; si no te va bien a esta hora, sáltalo y lo recolocamos en otro hueco de la semana.</p>
+    <footer>
+      <button type="button" class="btn" id="pSkip">Saltar y recolocar</button>
+      <span class="sp"></span>
+      <button type="button" class="btn primary" id="pDone">Hecho ✓</button>
+    </footer>`);
+  q('#pDone').onclick = () => {
+    S.estDone = S.estDone || {};
+    S.estDone[newId()] = { ds, s, e, code, t: tema || '' };
+    save(); close(); toast('¡Bien! Cuenta para tu semana'); render();
+  };
+  q('#pSkip').onclick = () => {
+    S.estSkip = S.estSkip || {};
+    (S.estSkip[ds] = S.estSkip[ds] || []).push({ s, e });
+    save(); close(); toast('Recolocado en otro hueco'); render();
+  };
+}
+function openDone(id) {
+  const h = (S.estDone || {})[id];
+  if (!h) return;
+  const { q, close } = sheet(`
+    <header><h2>Estudio · ${esc(subj(h.code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <p style="margin:0">Hecho ✓ ${fmt(h.s % 1440)}–${fmt(h.e % 1440)}${h.t ? ` · ${esc(h.t)}` : ''}. Cuenta como horas de estudio de la semana.</p>
+    <footer><button type="button" class="btn" id="dUndo">No lo hice, deshacer</button><span class="sp"></span><button type="button" class="btn primary" data-x>Cerrar</button></footer>`);
+  q('#dUndo').onclick = () => { delete S.estDone[id]; save(); close(); toast('Deshecho'); render(); };
+}
+
 /* ---------- rutina de un día concreto ---------- */
 // Cambia comidas, descansos o la hora de levantarte solo para ese día; lo habitual sigue en Ajustes → Mi rutina.
 function openRutinaDia(ds, focus) {
@@ -794,8 +840,30 @@ function clsSkip(ds, ck) {
   if (d) return d.voy ? null : { ...d, siempre: false };
   return r ? { ...r, siempre: true } : null;
 }
+/* ---------- rutina de exámenes ----------
+   Se aplica sola en época de parciales y desde que acaban las clases hasta el último final.
+   S.rutinaEx = { activa, estudiaNoche, cena, dormir, maxSemana, maxFinde, pausar: [tipos de evento] } */
+const RUTINA_EX_DEF = { activa: true, estudiaNoche: true, cena: '', dormir: '', maxSemana: 6, maxFinde: 6, pausar: [] };
+const rutinaEx = () => ({ ...RUTINA_EX_DEF, ...(S.rutinaEx || {}) });
+function examPeriods() {
+  const c = D.calendario, out = [];
+  if (c.periodo_parciales) out.push({ n: 'parciales', a: c.periodo_parciales[0], b: c.periodo_parciales[1] });
+  if (c.periodo_finales) out.push({ n: 'finales', a: dkey(addDays(dparse(c.fin_clases), 1)), b: c.periodo_finales[1] });
+  return out;
+}
+const exRut = ds => { const X = rutinaEx(); return X.activa && examPeriods().some(p => ds >= p.a && ds <= p.b) ? X : null; };
+// Tope de estudio al día que coloca Quatri (horas): normal o el de la rutina de exámenes
+function estMax(ds) {
+  const fin = wdOf(dparse(ds)) >= 5, X = exRut(ds);
+  if (X) return fin ? X.maxFinde : X.maxSemana;
+  const m = S.estMax || {};
+  return fin ? (m.finde ?? 3) : (m.semana ?? 2);
+}
+
 function dayPlan(ds) {
+  const X = exRut(ds);
   const R = { ...RUTINA_DEF, ...(S.rutina || {}) };
+  if (X) { R.estudiaNoche = X.estudiaNoche; if (X.cena) R.cena = X.cena; if (X.dormir) R.dormir = X.dormir; }
   const info = dayInfo(ds);
   const blocks = [], skipped = [];
   if (info.lective) {
@@ -851,8 +919,11 @@ function dayPlan(ds) {
     }
   }
   for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].kind === 'estudio' && blocks[i].e - blocks[i].s < 15) blocks.splice(i, 1);
-  // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos
-  const evs = eventsOn(ds);
+  // estudio que ya marcaste como hecho ese día (ocupa su rato y cuenta para la semana)
+  for (const [id, h] of Object.entries(S.estDone || {})) if (h.ds === ds && subj(h.code)) blocks.push({ s: h.s, e: h.e, code: h.code, kind: 'estudio', doneId: id,
+    label: `Estudio · ${subj(h.code).n}`, sub: `${h.t ? h.t + ' · ' : ''}hecho ✓` });
+  // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos; en exámenes se pueden dejar en pausa
+  const evs = eventsOn(ds).filter(x => !(X && (X.pausar || []).includes(x.ev.tipo)));
   const allDay = evs.filter(x => x.ev.todoDia);
   for (const x of evs.filter(x => !x.ev.todoDia)) {
     const Te = Number(x.ev.trayecto) || 0;
@@ -891,21 +962,22 @@ function dayPlan(ds) {
   const free = []; let t = wake;
   for (const b of blocks) { if (b.s - t >= 15) free.push({ s: t, e: b.s, kind: 'libre' }); t = Math.max(t, b.e); }
   if (sleep - t >= 15) free.push({ s: t, e: sleep, kind: 'libre' });
-  return { info, blocks, free, skipped, wake, sleep, allDay, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
+  return { info, blocks, free, skipped, wake, sleep, allDay, exRut: !!X, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
     classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
 }
 
 /* ---------- Tu día ---------- */
 function viewHoy() {
   S.dia = S.dia || dkey(new Date());
-  const ds = S.dia, p = dayPlan(ds), d = p.info.d, today = dkey(new Date());
+  const ds = S.dia, p = dayView(ds), d = p.info.d, today = dkey(new Date());
   const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
   const items = [...p.blocks, ...p.free, ...p.skipped].sort((a, b) => a.s - b.s || (b.kind === 'saltada') - (a.kind === 'saltada'));
   const row = it => {
     const style = it.code ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : it.kind === 'saltada' ? `No vas · ${esc(it.label)}` : esc(it.label);
     if (it.kind === 'saltada') it = { ...it, sub: `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}` };
-    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"`
+      : it.kind === 'plan' ? `data-plan="${it.s},${it.e},${it.code}" data-tema="${esc(it.tema || '')}"` : it.doneId ? `data-done="${it.doneId}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
     return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
       <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
   };
@@ -921,8 +993,10 @@ function viewHoy() {
     <div class="stats">
       <div class="stat free"><b>${dur(p.freeMin)}</b><span>libres de verdad</span></div>
       <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
+      ${p.planMin ? `<div class="stat"><b>${dur(p.planMin)}</b><span>de estudio propuesto</span></div>` : ''}
     </div>
     ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
+    ${p.exRut ? `<button class="notice exrut" id="exRutGo" style="margin-top:8px">Rutina de exámenes activa · <span>cambiarla ›</span></button>` : ''}
     ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
     <ul class="timeline">${items.map(row).join('')}</ul>`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
@@ -933,6 +1007,9 @@ function viewHoy() {
   v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
   v.querySelectorAll('[data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
   v.querySelectorAll('[data-exam]').forEach(el => el.onclick = () => openExamen(el.dataset.code, el.dataset.exam));
+  v.querySelectorAll('[data-plan]').forEach(el => el.onclick = () => { const [s, e, c] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, el.dataset.tema); });
+  v.querySelectorAll('[data-done]').forEach(el => el.onclick = () => openDone(el.dataset.done));
+  if ($('#exRutGo')) $('#exRutGo').onclick = () => go('rutinaex');
   v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
@@ -1110,11 +1187,11 @@ function viewCalendario() {
 
 function calWeek() {
   const mon = dparse(S.calSemana), today = dkey(new Date());
-  const days = [0, 1, 2, 3, 4, 5, 6].map(i => { const ds = dkey(addDays(mon, i)); return { ds, p: dayPlan(ds) }; });
+  const days = [0, 1, 2, 3, 4, 5, 6].map(i => { const ds = dkey(addDays(mon, i)); return { ds, p: dayView(ds) }; });
   const showRut = !!S.calRutina;
   let h0 = 24, h1 = 0;
   for (const { p } of days) {
-    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'evento'), ...p.free];
+    const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'plan' || b.kind === 'evento'), ...p.free];
     for (const b of items) { h0 = Math.min(h0, Math.floor(b.s / 60)); h1 = Math.max(h1, Math.ceil(b.e / 60)); }
   }
   if (h0 >= h1) { h0 = 8; h1 = 22; }
@@ -1124,7 +1201,7 @@ function calWeek() {
   const cols = days.map(({ ds, p }) => {
     const items = [];
     for (const f of p.free) if (f.e - f.s >= 30) items.push({ ...f });
-    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'evento' || showRut) items.push(b);
+    for (const b of p.blocks) if (b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'plan' || b.kind === 'evento' || showRut) items.push(b);
     const html = items.map(b => {
       const top = px(b.s), h = Math.max(px(b.e) - top - 1, 6);
       if (b.kind === 'libre') {
@@ -1133,7 +1210,7 @@ function calWeek() {
       }
       if (b.kind === 'evento') return `<div class="cblk evento" style="--ev:${evColor(b.tipo)};top:${top}px;height:${h}px" data-evid="${b.id}" data-ds="${ds}">
           <b>${esc(b.label.split(' ')[0].slice(0, 9))}</b>${h > 24 ? `<small>${fmt(b.s % 1440)}</small>` : ''}</div>`;
-      if (b.kind === 'estudio') return `<div class="cblk estudio" style="${colorVars(b.code)};top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s)}–${fmt(b.e)} · ${esc(b.sub)}">
+      if (b.kind === 'estudio' || b.kind === 'plan') return `<div class="cblk ${b.kind === 'plan' ? 'estudio plan' : 'estudio'}" style="${colorVars(b.code)};top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s)}–${fmt(b.e)} · ${esc(b.sub)}">
           <b>${esc(subj(b.code).s)}</b>${h > 24 ? '<small>Estudio</small>' : ''}</div>`;
       if (b.kind === 'clase' || b.kind === 'examen') {
         const a = subj(b.code), ex = b.kind === 'examen';
@@ -1254,6 +1331,7 @@ function weekPlan(monKey) {
   const hecho = {};
   for (const p of days) for (const b of p.blocks) if (b.kind === 'estudio') hecho[b.code] = (hecho[b.code] || 0) + (b.e - b.s) / 60;
   const estMin = Object.values(hecho).reduce((n, h) => n + h * 60, 0);
+  const enEx = days.some(p => p.exRut);
   const codes = (S.asignaturas || []).slice();
   const rows = codes.map(c => {
     const a = subj(c), lv = levelOf(c), f = LEVELS.find(l => l[0] === lv)[2];
@@ -1261,11 +1339,18 @@ function weekPlan(monKey) {
     const ex = nextExam(c, monKey);
     const daysTo = ex ? Math.round((dparse(ex[1]) - mon) / 864e5) : null;
     const urg = daysTo == null ? 1 : daysTo <= 14 ? 1.6 : daysTo <= 30 ? 1.25 : 1;
-    return { c, a, lv, oficial, ex, daysTo, w: oficial * f * urg };
+    // en época de exámenes manda lo que te queda de temario hasta el examen, no el ritmo del curso
+    let need = null;
+    if (enEx && TM && ex) { const P = temasSemana(c, 0, monKey, ex, daysTo); if (P && P.semanas) need = P.total / P.semanas; }
+    return { c, a, lv, oficial, ex, daysTo, need, w: need != null ? need * f : oficial * f * urg };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
   // ese estudio sale de horas que no eran libres (eran de clase), así que se suma al tiempo disponible
-  const sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.4), Math.round(oficialTotal * ritmo())));
+  let sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.4), Math.round(oficialTotal * ritmo())));
+  if (enEx) {
+    const need = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + (r.need ?? r.oficial * ritmo()), 0);
+    sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.6), Math.round(need)));
+  }
   const objetivo = E.objetivo ?? sugerido;
   const fixed = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] != null);
   const auto = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] == null);
@@ -1281,9 +1366,79 @@ function weekPlan(monKey) {
     r.pend = Math.max(0, r.horas - r.hecho);
   }
   const total = rows.reduce((n, r) => n + r.horas, 0);
-  return { days, freeMin, rows, objetivo, sugerido, oficialTotal, total };
+  return { days, freeMin, rows, objetivo, sugerido, oficialTotal, total, enEx };
 }
 const hfmt = h => num(Math.round(h * 2) / 2) + ' h';
+
+/* ---------- estudio colocado en tus huecos ----------
+   Reparte las horas de estudio que faltan de cada asignatura en los huecos libres de la semana, desde hoy:
+   bloques de 30 min a 1 h 30, con 15 min de pausa entre bloques, un tope por día y alternando asignaturas.
+   Los bloques son una propuesta: puedes marcarlos como hechos (S.estDone) o saltarlos (S.estSkip) y se recolocan. */
+function weekSchedule(monKey) {
+  const todayK = dkey(new Date()), key = monKey + '|' + todayK;
+  if (PLAN_CACHE[key]) return PLAN_CACHE[key];
+  const W = weekPlan(monKey), mon = dparse(monKey);
+  const pend = {}, tq = {}, lim = {};
+  for (const r of W.rows) {
+    if (r.lv === 'no' || r.pend <= 0) continue;
+    pend[r.c] = Math.round(r.pend * 60);
+    if (r.ex) lim[r.c] = r.ex[1]; // no tiene sentido estudiarla el día del examen ni después
+    const P = TM ? temasSemana(r.c, r.pend, monKey, r.ex, r.daysTo) : null;
+    tq[r.c] = P ? P.out.map(o => ({ t: o.t.t, m: o.h * 60 })) : [];
+  }
+  const skips = S.estSkip || {};
+  const days = W.days.map((p, i) => ({ ds: dkey(addDays(mon, i)), p })).filter(d => d.ds >= todayK);
+  for (const d of days) {
+    // huecos libres, sin los ratos que has saltado
+    // 15 min de margen al llegar de un trayecto (no te pones a estudiar nada más cruzar la puerta)
+    let gaps = d.p.free.map(f => ({ s: f.s + (d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
+    for (const k of skips[d.ds] || []) gaps = gaps.flatMap(g => g.e <= k.s || g.s >= k.e ? [g] : [{ s: g.s, e: k.s }, { s: k.e, e: g.e }]);
+    d.gaps = gaps.filter(g => g.e - g.s >= 30);
+    // el tope del día descuenta el estudio que ya tiene (hecho o en vez de una clase)
+    const ya = d.p.blocks.filter(b => b.kind === 'estudio').reduce((n, b) => n + b.e - b.s, 0);
+    d.cap = Math.max(0, Math.min(estMax(d.ds) * 60 - ya, Math.floor(d.gaps.reduce((n, g) => n + g.e - g.s, 0) * 0.8 / 15) * 15));
+  }
+  // si el examen de una asignatura cae esta semana, sus horas solo caben en los días de antes
+  const okDay = (c, ds) => !lim[c] || ds < lim[c];
+  for (const c of Object.keys(pend)) if (!days.some(d => okDay(c, d.ds))) delete pend[c]; // su examen ya ha pasado
+  const total = Object.values(pend).reduce((a, b) => a + b, 0), capSum = days.reduce((n, d) => n + d.cap, 0);
+  const out = {};
+  for (const d of days) {
+    // cuota del día, proporcional a lo que cabe ese día
+    let quota = capSum ? Math.min(d.cap, Math.round(total * d.cap / capSum / 15) * 15) : 0;
+    const blocks = [], usedToday = {};
+    for (const g of d.gaps) {
+      let t = g.s;
+      while (quota >= 30 && g.e - t >= 30) {
+        const cands = Object.keys(pend).filter(c => pend[c] >= 15 && okDay(c, d.ds))
+          .sort((a, b) => (usedToday[a] || 0) - (usedToday[b] || 0) || pend[b] - pend[a]);
+        if (!cands.length) break;
+        const c = cands[0];
+        const len = Math.floor(Math.min(90, pend[c] < 30 ? 30 : pend[c], quota, g.e - t) / 15) * 15;
+        if (len < 30) break;
+        const q = tq[c] || [];
+        const tema = q.length ? q[0].t : '';
+        if (q.length) { q[0].m -= len; if (q[0].m <= 0) q.shift(); }
+        blocks.push({ s: t, e: t + len, code: c, kind: 'plan', label: `Estudio · ${subj(c).n}`, sub: tema || 'Propuesta de Quatri', tema, ds: d.ds });
+        pend[c] -= len; quota -= len; usedToday[c] = (usedToday[c] || 0) + 1;
+        t += len + 15; // pausa entre bloques
+      }
+    }
+    out[d.ds] = blocks;
+  }
+  out._sinHueco = Math.max(0, Object.values(pend).reduce((a, b) => a + Math.max(0, b), 0));
+  return (PLAN_CACHE[key] = out);
+}
+// El día tal como se ve en Hoy y en Calendario: dayPlan + el estudio colocado por Quatri
+function dayView(ds) {
+  const p = dayPlan(ds);
+  if (!S.listo || !(S.asignaturas || []).length) return { ...p, plan: [], planMin: 0 };
+  const plan = weekSchedule(dkey(mondayOf(dparse(ds))))[ds] || [];
+  let free = p.free.map(f => ({ ...f }));
+  for (const b of plan) free = free.flatMap(f => f.e <= b.s || f.s >= b.e ? [f] : [{ ...f, e: b.s }, { ...f, s: b.e }]);
+  free = free.filter(f => f.e - f.s >= 15);
+  return { ...p, blocks: [...p.blocks, ...plan].sort((a, b) => a.s - b.s), free, plan, planMin: plan.reduce((n, b) => n + b.e - b.s, 0) };
+}
 
 // Bloque "Esta semana toca" de cada asignatura en la pestaña Estudio
 function temPlanHtml(r) {
@@ -1337,6 +1492,13 @@ function viewEstudio() {
         <div class="seg2 four" role="group" style="margin:0">${RITMOS.map(([f, t]) => `<button data-ritmo="${f}" aria-pressed="${ritmo() === f}">${t}<small>${Math.round(f * 100)} %</small></button>`).join('')}</div>
         <small>Las horas de la guía docente son generosas y casi nadie las hace todas. Elige qué parte quieres cubrir.</small></div>
       ${over ? `<div class="notice bad">Has planificado más horas de las que tienes libres. Baja el objetivo o revisa tu rutina.</div>` : ''}
+      ${(() => {
+        if (S.semana < thisMon) return '';
+        const sin = weekSchedule(S.semana)._sinHueco;
+        return sin >= 30 ? `<div class="notice warn">No caben ${dur(Math.round(sin / 15) * 15)} en tus huecos de esta semana con tu máximo diario. Súbelo en Ajustes o baja el objetivo.</div>`
+          : `<small class="hint ok">Quatri reparte estas horas en tus huecos libres: las ves como «Propuesta» en Hoy y en Calendario.</small>`;
+      })()}
+      ${W.enEx ? `<small class="hint">Época de exámenes: las horas se calculan con lo que te queda de temario hasta cada examen.</small>` : ''}
       ${W.total !== W.objetivo ? `<div class="notice warn">Con tus ajustes suman ${hfmt(W.total)}, no ${hfmt(W.objetivo)}.</div>` : ''}
     </section>
     <h2 class="sec">Reparto por asignatura</h2>
@@ -1356,7 +1518,7 @@ function viewEstudio() {
           </div>
           ${temPlanHtml(r)}
           <button class="temlink" data-tem="${r.c}"><span>Temario y exámenes${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
-          ${r.hecho ? `<small class="hint ok">${hfmt(r.hecho)} ya las estudias en vez de ir a clase · ${r.pend ? `te quedan ${hfmt(r.pend)} por colocar en tus huecos` : 'no te queda nada más por colocar'}</small>` : ''}
+          ${r.hecho ? `<small class="hint ok">Ya llevas ${hfmt(r.hecho)} esta semana (hechas o en vez de una clase) · ${r.pend ? `te quedan ${hfmt(r.pend)} por colocar en tus huecos` : 'no te queda nada más por colocar'}</small>` : ''}
           ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
           ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
         </div>`).join('')}
@@ -1703,6 +1865,52 @@ function applyTheme() {
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.setAttribute('content', dark ? '#16241F' : '#F1F5F2'); m.removeAttribute('media'); });
 }
 
+/* ---------- rutina de exámenes (pantalla) ---------- */
+function viewRutinaEx() {
+  const X = rutinaEx(), R = { ...RUTINA_DEF, ...(S.rutina || {}) }, v = $('#view');
+  const fd = k => { const d = dparse(k); return `${d.getDate()} de ${MONTHS[d.getMonth()]}`; };
+  const per = examPeriods().map(p => `<li><b>${p.n === 'parciales' ? 'Parciales' : 'Finales'}:</b> del ${fd(p.a)} al ${fd(p.b)}${p.n === 'finales' ? ' (desde que acaban las clases)' : ''}</li>`).join('');
+  const hs = (id, label, vals, val) => `<label class="field"><span>${label}</span><select id="${id}">${vals.map(h => `<option value="${h}" ${val === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>`;
+  v.innerHTML = `
+    <button class="link back" id="xBack">‹ Ajustes</button>
+    <div class="eyebrow">Ajustes</div>
+    <h1>Rutina de exámenes</h1>
+    <p class="lead">En época de exámenes tu día cambia: estudias más, cenas más tarde, dejas cosas… Quatri usa esta rutina esos días y coloca más estudio.</p>
+    <section class="card stack">
+      <label class="check"><input type="checkbox" id="xA" ${X.activa ? 'checked' : ''}> <b>Usar la rutina de exámenes</b></label>
+      <ul class="plain">${per}</ul>
+    </section>
+    <div id="xBox" class="stack" ${X.activa ? '' : 'hidden'} style="margin-top:12px">
+      <section class="card stack"><div class="eyebrow">La noche</div>
+        <label class="check"><input type="checkbox" id="xN" ${X.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
+        <div class="fields">
+          <label class="field"><span>Cenas a las</span><input type="time" id="xC" step="300" value="${X.cena || R.cena}"></label>
+          <label class="field"><span>Te vas a dormir a las</span><input type="time" id="xD" step="300" value="${X.dormir || R.dormir}"></label>
+        </div></section>
+      <section class="card stack"><div class="eyebrow">Estudio al día</div>
+        <div class="fields">
+          ${hs('xS', 'Máximo entre semana', [3, 4, 5, 6, 7, 8], X.maxSemana)}
+          ${hs('xF', 'Máximo el fin de semana', [3, 4, 5, 6, 7, 8], X.maxFinde)}
+        </div></section>
+      <section class="card stack"><div class="eyebrow">Dejar en pausa esos días</div>
+        ${EV_TYPES.filter(t => t[0] !== 'estudio' && t[0] !== 'otro').map(([k, n]) => `<label class="check"><input type="checkbox" data-pausa="${k}" ${X.pausar.includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}
+        <small class="hint">Los eventos de ese tipo no aparecen ni ocupan tiempo durante los exámenes.</small>
+      </section>
+    </div>
+    <p class="hint" style="margin-top:14px">Los cambios se guardan solos.</p>`;
+  const read = () => {
+    S.rutinaEx = { activa: $('#xA').checked, estudiaNoche: $('#xN').checked,
+      cena: $('#xC').value !== R.cena ? $('#xC').value : '', dormir: $('#xD').value !== R.dormir ? $('#xD').value : '',
+      maxSemana: Number($('#xS').value), maxFinde: Number($('#xF').value),
+      pausar: [...v.querySelectorAll('[data-pausa]:checked')].map(c => c.dataset.pausa) };
+    $('#xBox').hidden = !S.rutinaEx.activa;
+    save();
+  };
+  v.querySelectorAll('input,select').forEach(el => el.onchange = read);
+  $('#xBack').onclick = () => go('ajustes');
+  tabs('ajustes');
+}
+
 /* ---------- ajustes ---------- */
 function viewAjustes() {
   const g = grado();
@@ -1721,7 +1929,16 @@ function viewAjustes() {
       </div>
       <small class="hint">Automático sigue el modo de tu móvil.</small>
     </section>
+    <section class="card stack" style="margin-bottom:12px">
+      <div class="eyebrow">Estudio que coloca Quatri</div>
+      <div class="fields">
+        <label class="field"><span>Máximo al día entre semana</span><select id="emS">${[1, 1.5, 2, 2.5, 3, 4, 5].map(h => `<option value="${h}" ${(S.estMax?.semana ?? 2) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
+        <label class="field"><span>Máximo al día el fin de semana</span><select id="emF">${[1, 2, 3, 4, 5, 6].map(h => `<option value="${h}" ${(S.estMax?.finde ?? 3) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
+      </div>
+      <small class="hint">Quatri reparte tus horas de estudio en tus huecos libres sin pasar de esto. En época de exámenes manda la rutina de exámenes.</small>
+    </section>
     <div class="stack">
+      <button class="choice" data-go="rutinaex"><span><b>Rutina de exámenes</b><span class="code">Cómo cambia tu día en parciales y finales</span></span></button>
       <button class="choice" data-go="rutina"><span><b>Mi rutina</b><span class="code">Trayecto, comidas, descansos y sueño</span></span></button>
       <button class="choice" data-go="semana"><span><b>Mi horario de clases</b><span class="code">Semana tipo y avisos de solapes</span></span></button>
       <button class="choice" data-go="grupos"><span><b>Mis grupos</b><span class="code">Cambiar de subgrupo en alguna asignatura</span></span></button>
@@ -1732,6 +1949,8 @@ function viewAjustes() {
     <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   v.querySelectorAll('[data-tema]').forEach(b => b.onclick = () => { S.tema = b.dataset.tema; save(); applyTheme(); viewAjustes(); });
+  const em = () => { S.estMax = { semana: Number($('#emS').value), finde: Number($('#emF').value) }; save(); toast('Guardado'); };
+  $('#emS').onchange = em; $('#emF').onchange = em;
   tabs('ajustes');
 }
 
@@ -1751,6 +1970,8 @@ async function start() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   window.addEventListener('hashchange', render);
   render();
+  // el temario hace falta para poner el tema en cada bloque de estudio; cuando llega, se repinta
+  if (S.listo) loadTemarios().then(() => { PLAN_CACHE = {}; if (['hoy', 'calendario'].includes(current())) { const y = window.scrollY; render(); window.scrollTo(0, y); } });
 }
 start();
 

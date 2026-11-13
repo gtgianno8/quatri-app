@@ -290,7 +290,14 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .tema.st-repasar{border-left:4px solid var(--warn)}
 .tema.st-viendo{border-left:4px solid var(--accent)}
 .sheet textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--surface);color:var(--fg);resize:vertical}
-.it.rutina,.it.clase,.it.estudio,.it.saltada{cursor:pointer}
+.it.rutina,.it.clase,.it.estudio,.it.saltada,.it.plan{cursor:pointer}
+.it.plan .n{background:color-mix(in srgb,var(--cb) 22%,var(--surface));border:1px dashed color-mix(in srgb,var(--c) 70%,transparent);border-left:4px dashed var(--c)}
+.it.plan .n b{font-weight:600}
+.it.plan .n small::before{content:"Propuesta · ";color:var(--muted);font-weight:600}
+.cblk.plan{opacity:.75;border-left-style:dashed}
+ul.plain{margin:0;padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:4px}
+.notice.exrut{width:100%;text-align:left;background:var(--hi);color:var(--hi-fg);border:0;font-weight:600}
+.notice.exrut span{opacity:.75}
 .it.estudio .n{background:color-mix(in srgb,var(--cb) 40%,var(--surface));border:1px dashed var(--c);border-left:4px solid var(--c)}
 .it.estudio .n b{font-weight:600}
 .it.saltada .n{background:transparent;border:1px dashed var(--line);border-left:4px solid color-mix(in srgb,var(--c) 45%,transparent);opacity:.75}
