@@ -1414,6 +1414,9 @@ function parcialSet(code, ts) {
 // la decide el alumno tras el parcial. En el GRETI no hay recuperaciones después de los finales.
 const finalGuia = code => (EV[code] || [])[0] || '';
 const finalModo = code => (S.finalModo || {})[code] || (finalGuia(code) === 'segunda' ? 'segunda' : 'todo');
+// ¿Este tema entra en el final? Con «Solo la 2ª parte» quedan fuera los del parcial;
+// y siempre queda fuera si el alumno le ha quitado la etiqueta Final a mano.
+const finalIn = (code, t, i, pset) => !t.noFinal && (finalModo(code) === 'segunda' ? !pset.has(i) : true);
 const TEM_NEED = { nuevo: 1, viendo: 0.7, repasar: 0.45, ok: 0.1 };
 const TEM_PRIO = { repasar: 0, viendo: 1, nuevo: 2, ok: 3 };
 function temasSemana(code, horas, monKey, ex, daysTo) {
@@ -1428,7 +1431,7 @@ function temasSemana(code, horas, monKey, ex, daysTo) {
   // qué entra: los temas elegidos; si no, en el parcial lo de la primera parte; en el final todo
   // o solo la segunda parte (según lo que elija el alumno); y en un control lo que se ha dado hasta ahora
   const entra = (t, i) => !ex ? true : sel.length ? sel.includes(t.id)
-    : ex[0] === 'final' ? (finalModo(code) === 'segunda' ? !pset.has(i) : true)
+    : ex[0] === 'final' ? finalIn(code, t, i, pset)
     : ex[0] === 'parcial' ? (pset.size ? pset.has(i) : i < dados) : i < dados;
   const list = ts.map((t, i) => ({ t, i, dado: i < dados || t.st !== 'nuevo',
     need: (Number(t.h) || 3) * ritmo() * (t.st === 'ok' && !near ? 0 : TEM_NEED[t.st] ?? 1) }))
@@ -1462,7 +1465,18 @@ async function viewTemario() {
   const T = S.temario?.[code] || { temas: [], guia: false }, ts = T.temas;
   const tot = ts.reduce((n, t) => n + (Number(t.h) || 0), 0), pr = temProgress(code);
   const exams = a.e.map(e => e[0]);
-  const exLabel = ex => [ex.includes('p') ? 'Parcial' : '', ex.includes('f') ? 'Final' : ''].filter(Boolean);
+  // etiquetas reales de cada tema: Parcial (calculado o marcado) y Final (según lo que elijas para el final)
+  const psetT = parcialSet(code, ts), today = dkey(new Date());
+  const parc = examsOf(code).filter(e => e[0] === 'parcial').sort((x, y) => x[1].localeCompare(y[1]))[0];
+  const parcHecho = parc && parc[1] < today, hasFinal = examsOf(code).some(e => e[0] === 'final');
+  const tagsOf = (t, i) => {
+    const out = [];
+    if (psetT.has(i)) out.push(parcHecho ? 'Parcial ✓' : 'Parcial');
+    if (hasFinal && finalIn(code, t, i, psetT)) out.push('Final');
+    return out;
+  };
+  // temas que ya no entran en ningún examen pendiente (p. ej. los del parcial si haces solo la 2ª parte)
+  const fuera = (t, i) => hasFinal && parcHecho && !finalIn(code, t, i, psetT);
   v.innerHTML = `
     <button class="link back" id="tBack">‹ Estudio</button>
     <div class="tem-head" style="${colorVars(code)}"><span class="bar"></span><div>
@@ -1504,11 +1518,11 @@ async function viewTemario() {
     <button class="btn" id="tAddEx" style="margin-top:8px">+ Añadir control o examen</button>
     <h2 class="sec">Temas</h2>
     <div class="stack" style="margin-top:8px">${ts.map((t, i) => `
-      <div class="card tema st-${t.st}" data-i="${i}">
+      <div class="card tema st-${t.st}${fuera(t, i) ? ' fuera' : ''}" data-i="${i}">
         <button class="tema-main" data-edit="${i}">
           <b>${esc(t.t)}</b>
           ${t.d ? `<small>${esc(t.d)}</small>` : ''}
-          <span class="tema-tags">${t.h ? `<span>${hfmt(Number(t.h))}</span>` : ''}${exLabel(t.ex || '').map(x => `<span class="ex">${x}</span>`).join('')}</span>
+          <span class="tema-tags">${t.h ? `<span>${hfmt(Number(t.h))}</span>` : ''}${tagsOf(t, i).map(x => `<span class="ex">${x}</span>`).join('')}${fuera(t, i) ? '<span class="out">No entra en el final</span>' : ''}</span>
         </button>
         <div class="tema-st" role="group" aria-label="Cómo lo llevas">${TEM_ST.map(([id, txt]) => `<button data-st="${id}" aria-pressed="${t.st === id}">${txt}</button>`).join('')}</div>
       </div>`).join('')}
@@ -1543,7 +1557,7 @@ function openTema(code, i) {
   S.temario = S.temario || {};
   S.temario[code] = S.temario[code] || { temas: [], guia: false };
   const ts = S.temario[code].temas, t = i == null ? null : ts[i];
-  const ex = t?.ex || '';
+  const pset = parcialSet(code, ts), inP = t ? pset.has(i) : false;
   const ov = document.createElement('div');
   ov.className = 'ov';
   ov.innerHTML = `
@@ -1553,8 +1567,9 @@ function openTema(code, i) {
       <label class="field"><span>Qué incluye (opcional)</span><textarea id="tD" rows="3" maxlength="300">${esc(t?.d || '')}</textarea></label>
       <label class="field"><span>Horas de estudio que crees que necesita</span><input id="tH" type="number" min="0" max="200" step="0.5" inputmode="decimal" value="${t?.h ?? ''}"></label>
       <div class="field"><span>Entra en</span>
-        <label class="check"><input type="checkbox" id="tP" ${ex.includes('p') ? 'checked' : ''}> Parcial</label>
-        <label class="check"><input type="checkbox" id="tF" ${ex.includes('f') || !t ? 'checked' : ''}> Final</label></div>
+        <label class="check"><input type="checkbox" id="tP" ${inP ? 'checked' : ''}> Parcial</label>
+        <label class="check"><input type="checkbox" id="tF" ${!t?.noFinal ? 'checked' : ''}> Final</label>
+        ${finalModo(code) === 'segunda' ? '<small>Como en el final haces solo la 2ª parte, los temas del parcial no cuentan para el final.</small>' : ''}</div>
       <p class="err" id="tErr" hidden></p>
       <div class="confirm" id="tDelC" hidden></div>
       <footer>
@@ -1575,8 +1590,11 @@ function openTema(code, i) {
     e.preventDefault();
     const title = q('#tT').value.trim();
     if (!title) { q('#tErr').textContent = 'Ponle un nombre al tema.'; q('#tErr').hidden = false; return; }
+    const P = q('#tP').checked, Fi = q('#tF').checked;
+    // si hasta ahora el parcial se calculaba solo, se fija esa lista antes de cambiar este tema (para no perder los demás)
+    if (P !== inP && !ts.some(x => (x.ex || '').includes('p'))) ts.forEach((x, k) => { if (pset.has(k)) x.ex = 'p' + (x.ex || '').replace('p', ''); });
     const data = { t: title, d: q('#tD').value.trim(), h: q('#tH').value === '' ? 0 : Math.max(0, Number(q('#tH').value) || 0),
-      ex: (q('#tP').checked ? 'p' : '') + (q('#tF').checked ? 'f' : '') };
+      ex: (P ? 'p' : '') + (Fi ? 'f' : ''), noFinal: !Fi };
     if (t) Object.assign(t, data); else ts.push({ id: newId(), st: 'nuevo', ...data });
     done(t ? 'Tema actualizado' : 'Tema añadido');
   };
