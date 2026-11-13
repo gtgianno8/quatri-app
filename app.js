@@ -1498,6 +1498,7 @@ async function viewTemario() {
         <small class="hint">${m === 'segunda'
           ? `Haces solo el segundo parcial: estudias ${rng(p2)} (la nota del parcial ya te cuenta).`
           : `Final entero o recuperar el parcial el mismo día: entra todo, ${rng(p1)} del parcial y ${rng(p2)} después. Si el parcial te va bien y puedes hacer solo el segundo parcial, elige «Solo la 2ª parte».`}</small>
+        ${g === 'todo' || g === 'segunda' ? `<button class="link" data-fm-reset style="align-self:flex-start">Volver a lo que dice la guía</button>` : ''}
       </div>`;
     })()}
     <button class="btn" id="tAddEx" style="margin-top:8px">+ Añadir control o examen</button>
@@ -1527,6 +1528,7 @@ async function viewTemario() {
   $('#tAdd').onclick = () => openTema(code, null);
   $('#tAddEx').onclick = () => openExamen(code, null);
   v.querySelectorAll('[data-fm]').forEach(b => b.onclick = () => { S.finalModo = S.finalModo || {}; S.finalModo[code] = b.dataset.fm; rerender(); });
+  v.querySelectorAll('[data-fm-reset]').forEach(b => b.onclick = () => { delete S.finalModo[code]; rerender(); });
   v.querySelectorAll('[data-fm-edit]').forEach(b => b.onclick = () => { S.finalModo = S.finalModo || {}; S.finalModo[code] = b.dataset.fmEdit; rerender(); });
   v.querySelectorAll('[data-exid]').forEach(b => b.onclick = () => openExamen(code, b.dataset.exid));
   if ($('#tReset')) $('#tReset').onclick = async () => {
