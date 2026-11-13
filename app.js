@@ -1373,9 +1373,11 @@ function viewEstudio() {
    S.temario[código] = { temas: [{ id, t, d, h, ex: 'pf'|'p'|'f'|'', st: 'nuevo'|'viendo'|'ok'|'repasar' }] } */
 const TEM_URL = 'data/temarios-eseiaat.json';
 let TM = null; // temarios de la guía, se cargan la primera vez que hacen falta
+let EV = {};   // evaluación de la guía: código -> [final: 'todo'|'segunda'|'elegir'|'', pesos]
 async function loadTemarios() {
   if (TM) return TM;
-  try { const r = await fetch(TEM_URL); TM = r.ok ? await r.json() : {}; } catch { TM = {}; }
+  const get = async u => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch { return {}; } };
+  [TM, EV] = await Promise.all([get(TEM_URL), get('data/evaluacion-eseiaat.json')]);
   return TM;
 }
 const TEM_ST = [['nuevo', 'Sin empezar'], ['viendo', 'Viendo'], ['ok', 'Lo tengo'], ['repasar', 'Repasar']];
@@ -1408,8 +1410,10 @@ function parcialSet(code, ts) {
   return new Set([...Array(n).keys()]);
 }
 // En el final: 'todo' (final entero o recuperación del parcial) o 'segunda' (solo el segundo parcial).
-// En el GRETI no hay recuperaciones después de los finales, así que esto se decide tras el parcial.
-const finalModo = code => (S.finalModo || {})[code] || 'todo';
+// La guía dice cómo es en cada asignatura; si hay elección (dos parciales o recuperar el parcial el día del final),
+// la decide el alumno tras el parcial. En el GRETI no hay recuperaciones después de los finales.
+const finalGuia = code => (EV[code] || [])[0] || '';
+const finalModo = code => (S.finalModo || {})[code] || (finalGuia(code) === 'segunda' ? 'segunda' : 'todo');
 const TEM_NEED = { nuevo: 1, viendo: 0.7, repasar: 0.45, ok: 0.1 };
 const TEM_PRIO = { repasar: 0, viendo: 1, nuevo: 2, ok: 3 };
 function temasSemana(code, horas, monKey, ex, daysTo) {
@@ -1468,6 +1472,7 @@ async function viewTemario() {
     ${T.guia ? `<p class="hint">Sacado de la guía docente oficial. Si tu profesor lo da distinto, toca un tema para cambiarlo.</p>`
       : `<div class="notice warn">Esta asignatura no tiene temario en la guía docente. Añade los temas que estáis dando.</div>`}
     <h2 class="sec">Exámenes</h2>
+    ${(EV[code] || [])[1] ? `<p class="hint" style="margin:0 0 8px">Nota final según la guía: ${esc(EV[code][1])}</p>` : ''}
     <div class="stack">${examsOf(code).sort((x, y) => x[1].localeCompare(y[1])).map(e => { const d = dparse(e[1]); return `
       <button class="exrow${e[1] < dkey(new Date()) ? ' past' : ''}" style="${colorVars(code)}" ${e[5] ? `data-exid="${e[5]}"` : ''}>
         <span class="md">${DAYS_SHORT[wdOf(d)]} ${d.getDate()}/${d.getMonth() + 1}</span>
@@ -1476,9 +1481,14 @@ async function viewTemario() {
     ${(() => {
       const ex = examsOf(code);
       if (!ex.some(e => e[0] === 'final') || !ex.some(e => e[0] === 'parcial') || !ts.length) return '';
-      const ps = parcialSet(code, ts), m = finalModo(code);
+      const ps = parcialSet(code, ts), m = finalModo(code), g = finalGuia(code);
       const rng = idx => idx.length ? (idx.length === 1 ? `el tema ${idx[0] + 1}` : `los temas ${idx[0] + 1} a ${idx[idx.length - 1] + 1}`) : 'ningún tema';
       const p1 = [...ps].sort((a, b) => a - b), p2 = ts.map((_, i) => i).filter(i => !ps.has(i));
+      // la guía dice que el final es siempre igual: no hay nada que elegir (salvo que el profesor lo haga distinto)
+      if ((g === 'todo' || g === 'segunda') && !(S.finalModo || {})[code]) return `<div class="card stack finalmodo">
+        <div class="eyebrow">El final</div>
+        <div>${g === 'todo' ? `Según la guía docente, el final es de <b>todo el temario</b>.` : `Según la guía docente, el final es solo de la <b>segunda parte</b>: ${rng(p2)}.`}</div>
+        <button class="link" data-fm-edit="${g}" style="align-self:flex-start">Mi profesor lo hace distinto</button></div>`;
       return `<div class="card stack finalmodo">
         <div class="eyebrow">¿Qué harás en el final?</div>
         <div class="seg2" role="group" style="margin:0">
@@ -1517,6 +1527,7 @@ async function viewTemario() {
   $('#tAdd').onclick = () => openTema(code, null);
   $('#tAddEx').onclick = () => openExamen(code, null);
   v.querySelectorAll('[data-fm]').forEach(b => b.onclick = () => { S.finalModo = S.finalModo || {}; S.finalModo[code] = b.dataset.fm; rerender(); });
+  v.querySelectorAll('[data-fm-edit]').forEach(b => b.onclick = () => { S.finalModo = S.finalModo || {}; S.finalModo[code] = b.dataset.fmEdit; rerender(); });
   v.querySelectorAll('[data-exid]').forEach(b => b.onclick = () => openExamen(code, b.dataset.exid));
   if ($('#tReset')) $('#tReset').onclick = async () => {
     const c = $('#tConf'); c.hidden = false;
