@@ -618,6 +618,7 @@ function openClase(ds, ck) {
     siempre: !!reg,
     hoy: punt ? (punt.voy ? 'voy' : 'no') : (reg ? 'no' : 'voy'),
     estudio: (punt && !punt.voy ? punt.estudio : reg?.estudio) || 'no',
+    est: (punt && !punt.voy ? punt.est : reg?.est) || s.code,
   };
   const dia = DAYS[x[0]].toLowerCase();
   const ov = document.createElement('div');
@@ -639,6 +640,9 @@ function openClase(ds, ck) {
           <button type="button" data-est="uni">Estudiar en la uni</button>
         </div>
         <small>Si ese día no tienes nada más en la uni y no vas, tampoco contamos el trayecto.</small></div>
+      <label class="field" id="cEstCode"><span>¿Qué estudias?</span>
+        <select id="cEc">${(S.asignaturas || []).map(c => `<option value="${c}" ${c === F.est ? 'selected' : ''}>${esc(subj(c).n)}${c === s.code ? ' (esta clase)' : ''}</option>`).join('')}</select>
+        <small>Cuenta como horas de estudio de esa asignatura en la pestaña Estudio.</small></label>
       <footer><span class="sp"></span>
         <button type="button" class="btn" data-x>Cancelar</button>
         <button type="submit" class="btn primary">Guardar</button>
@@ -654,6 +658,7 @@ function openClase(ds, ck) {
     ov.querySelectorAll('[data-hoy]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hoy === F.hoy)));
     ov.querySelectorAll('[data-est]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.est === F.estudio)));
     q('#cEst').hidden = F.hoy === 'voy' && !F.siempre;
+    q('#cEstCode').hidden = q('#cEst').hidden || F.estudio === 'no';
   };
   ov.querySelectorAll('[data-hoy]').forEach(b => b.onclick = () => { F.hoy = b.dataset.hoy; paint(); });
   ov.querySelectorAll('[data-est]').forEach(b => b.onclick = () => { F.estudio = b.dataset.est; paint(); });
@@ -663,11 +668,11 @@ function openClase(ds, ck) {
     e.preventDefault();
     delete S.faltas[dk];
     if (F.siempre) {
-      S.noVoy[ck] = { estudio: F.estudio };
+      S.noVoy[ck] = { estudio: F.estudio, est: q('#cEc').value };
       if (F.hoy === 'voy') S.faltas[dk] = { voy: true }; // este día sí vas, aunque normalmente no
     } else {
       delete S.noVoy[ck];
-      if (F.hoy === 'no') S.faltas[dk] = { estudio: F.estudio };
+      if (F.hoy === 'no') S.faltas[dk] = { estudio: F.estudio, est: q('#cEc').value };
     }
     save(); close();
     toast(F.siempre ? `Guardado para todos los ${dia}` : F.hoy === 'no' ? 'Guardado solo para este día' : 'Vas a clase');
@@ -803,8 +808,10 @@ function dayPlan(ds) {
       if (!f) { blocks.push({ ...base, kind: 'clase' }); continue; }
       // no vas a esta clase: queda libre o la cambias por estudio (en casa o en la uni)
       skipped.push({ ...base, kind: 'saltada', siempre: f.siempre });
-      if (f.estudio === 'casa' || f.estudio === 'uni') blocks.push({ ...base, kind: 'estudio', uni: f.estudio === 'uni',
-        label: `Estudio · ${subj(s.code).n}`, sub: f.estudio === 'uni' ? 'En la uni, en vez de ir a clase' : 'En casa, en vez de ir a clase' });
+      // se puede estudiar otra asignatura en ese rato (f.est); por defecto, la misma de la clase
+      const ec = f.est && subj(f.est) ? f.est : s.code;
+      if (f.estudio === 'casa' || f.estudio === 'uni') blocks.push({ ...base, code: ec, kind: 'estudio', uni: f.estudio === 'uni',
+        label: `Estudio · ${subj(ec).n}`, sub: `${f.estudio === 'uni' ? 'En la uni' : 'En casa'}, en vez de ir a ${ec === s.code ? 'clase' : `${subj(s.code).s} ${x[3]}`}` });
     }
   }
   for (const c of S.asignaturas || []) for (const e of examsOf(c)) {
@@ -1243,6 +1250,10 @@ function weekPlan(monKey) {
   const mon = dparse(monKey);
   const days = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
   const freeMin = days.reduce((n, p) => n + p.freeMin, 0);
+  // estudio que ya tienes puesto en vez de ir a clase: cuenta como horas de estudio de esa asignatura
+  const hecho = {};
+  for (const p of days) for (const b of p.blocks) if (b.kind === 'estudio') hecho[b.code] = (hecho[b.code] || 0) + (b.e - b.s) / 60;
+  const estMin = Object.values(hecho).reduce((n, h) => n + h * 60, 0);
   const codes = (S.asignaturas || []).slice();
   const rows = codes.map(c => {
     const a = subj(c), lv = levelOf(c), f = LEVELS.find(l => l[0] === lv)[2];
@@ -1253,7 +1264,8 @@ function weekPlan(monKey) {
     return { c, a, lv, oficial, ex, daysTo, w: oficial * f * urg };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
-  const sugerido = Math.max(1, Math.min(Math.round(freeMin / 60 * 0.4), Math.round(oficialTotal * ritmo())));
+  // ese estudio sale de horas que no eran libres (eran de clase), así que se suma al tiempo disponible
+  const sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.4), Math.round(oficialTotal * ritmo())));
   const objetivo = E.objetivo ?? sugerido;
   const fixed = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] != null);
   const auto = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] == null);
@@ -1263,6 +1275,10 @@ function weekPlan(monKey) {
     if (r.lv === 'no') r.horas = 0;
     else if (E.ajuste[r.c] != null) { r.horas = E.ajuste[r.c]; r.manual = true; }
     else r.horas = wsum ? Math.round(rest * r.w / wsum * 2) / 2 : 0;
+    // nunca menos de lo que ya estudias en vez de clase; lo que falta es lo que queda por colocar en tus huecos
+    r.hecho = Math.round((hecho[r.c] || 0) * 2) / 2;
+    if (r.horas < r.hecho) r.horas = r.hecho;
+    r.pend = Math.max(0, r.horas - r.hecho);
   }
   const total = rows.reduce((n, r) => n + r.horas, 0);
   return { days, freeMin, rows, objetivo, sugerido, oficialTotal, total };
@@ -1340,6 +1356,7 @@ function viewEstudio() {
           </div>
           ${temPlanHtml(r)}
           <button class="temlink" data-tem="${r.c}"><span>Temario y exámenes${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
+          ${r.hecho ? `<small class="hint ok">${hfmt(r.hecho)} ya las estudias en vez de ir a clase · ${r.pend ? `te quedan ${hfmt(r.pend)} por colocar en tus huecos` : 'no te queda nada más por colocar'}</small>` : ''}
           ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
           ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
         </div>`).join('')}
