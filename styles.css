@@ -173,9 +173,18 @@ details.opt summary{cursor:pointer;color:var(--accent);font-weight:500;font-size
 .it.libre .n b{color:var(--good);font-weight:600}
 
 /* pestañas */
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;width:100%}
-.tabs button{border:0;background:transparent;border-radius:10px;padding:6px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12.5px;font-weight:500;color:var(--muted)}
-.tabs button span{font-size:19px;line-height:1}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%}
+.tabs button{border:0;background:transparent;border-radius:10px;padding:4px 4px;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:11.5px;font-weight:500;color:var(--muted)}
+.tabs button span{font-size:18px;line-height:1}
+.tabs .side-only{display:none}
+/* barra de abajo más fina cuando son las pestañas (no en los botones del alta) */
+body.has-side #actions{padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}
+/* Ajustes: engranaje arriba a la derecha */
+.gear{margin-left:8px;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:20px;line-height:1;display:grid;place-items:center}
+body.has-side .fab{bottom:calc(68px + env(safe-area-inset-bottom,0px))}
+body.has-side .toast{bottom:calc(66px + env(safe-area-inset-bottom,0px))}
+body.has-side .view{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
+.gear[aria-current="page"]{color:var(--accent);background:var(--accent-soft);border-color:transparent}
 .tabs button[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
 
 /* estudio */
@@ -274,6 +283,8 @@ h2.sec{font-size:18px;margin:22px 0 4px}
   body.has-side .side-brand .dot{color:var(--hi)}
   body.has-side .tabs button{flex-direction:row;justify-content:flex-start;gap:12px;padding:11px 12px;font-size:15px}
   body.has-side .tabs button span{width:22px;text-align:center}
+  body.has-side .tabs .side-only{display:flex;margin-top:auto}
+  body.has-side #actions{padding:22px 14px}
   body.has-side .view{max-width:1240px;padding:32px 40px 64px}
   body.has-side .fab{bottom:32px;right:36px}
   body.has-side .toast{bottom:32px;left:calc(50% + 116px)}

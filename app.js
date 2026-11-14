@@ -394,6 +394,7 @@ function actions(html) {
   bar.hidden = !html;
   // en pantallas grandes, las pestañas pasan a un menú lateral
   document.body.classList.toggle('has-side', html.includes('class="tabs"'));
+  if ($('#gear')) $('#gear').hidden = !html.includes('class="tabs"'); // el engranaje solo con la app ya configurada
 }
 
 /* ---------- 1. Grado ---------- */
@@ -1429,8 +1430,12 @@ function swipe(el, fn) {
 
 /* ---------- pestañas ---------- */
 function tabs(active) {
-  const t = [['hoy', 'Hoy', '◷'], ['calendario', 'Calendario', '▦'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
-  actions(`<nav class="tabs"><div class="side-brand"><span>quatri<span class="dot">.</span></span><span class="beta">${esc($('.brand .beta')?.textContent || '')}</span></div>${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
+  // abajo, lo de cada día; Ajustes va aparte: engranaje arriba en el móvil, al final del menú lateral en el ordenador
+  const t = [['hoy', 'Hoy', '◷'], ['calendario', 'Calendario', '▦'], ['estudio', 'Estudio', '✎']];
+  const btn = ([id, label, ic], cls = '') => `<button data-tab="${id}" class="${cls}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`;
+  actions(`<nav class="tabs"><div class="side-brand"><span>quatri<span class="dot">.</span></span><span class="beta">${esc($('.brand .beta')?.textContent || '')}</span></div>${t.map(x => btn(x)).join('')}${btn(['ajustes', 'Ajustes', '⚙'], 'side-only')}</nav>`);
+  const gear = $('#gear');
+  if (gear) { gear.hidden = false; gear.setAttribute('aria-current', active === 'ajustes' ? 'page' : 'false'); gear.onclick = () => go('ajustes'); }
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     // tocar la pestaña en la que ya estás te devuelve a hoy / esta semana
     if (b.dataset.tab === active && active === 'hoy') { S.dia = dkey(new Date()); save(); viewHoy(); return; }
