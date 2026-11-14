@@ -53,7 +53,7 @@ async function sb() {
   SB.auth.onAuthStateChange((ev, session) => {
     const u = session?.user || null, nuevo = u && u.id !== USER?.id;
     USER = u;
-    if (nuevo) setTimeout(() => pull(), 0);
+    if (nuevo) { setTimeout(() => pull(), 0); vigilarCambios(); }
     if (['ajustes', 'bienvenida', 'listo'].includes(current())) render();
   });
   return SB;
@@ -70,8 +70,15 @@ async function initCuenta() {
     if (vuelta) { history.replaceState(null, '', location.pathname + (location.hash.includes('access_token') ? '' : location.hash)); if (USER) toast('¡Dentro! Tu quatri ya se guarda en tu cuenta'); }
     if (USER) await pull();
   } catch { /* sin conexión: seguimos con lo de este dispositivo */ }
-  // al volver a la app (cambiar de pestaña, desbloquear el móvil) se trae lo último de tu cuenta
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && USER) pull(); });
+  vigilarCambios();
+}
+// Trae lo último de tu cuenta: al volver a la app o a la ventana, y cada 15 s mientras la tienes delante
+function vigilarCambios() {
+  if (vigilarCambios.on) return; vigilarCambios.on = true;
+  const mira = () => { if (USER && document.visibilityState === 'visible' && !document.querySelector('.ov')) pull(); };
+  document.addEventListener('visibilitychange', mira);
+  window.addEventListener('focus', mira);
+  setInterval(mira, 15000);
 }
 async function push() {
   if (!USER || !SB) return;
@@ -103,7 +110,9 @@ function applyRemote(data) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
   PLAN_CACHE = {}; colorCache = null; applyTheme();
   if (S.listo && !STEPS.includes(current())) { if (!['hoy', 'calendario', 'estudio', 'ajustes', 'temario', 'rutinaex'].includes(location.hash.slice(1))) location.hash = 'hoy'; }
-  render();
+  // en un paso del alta (formularios) no se repinta para no borrar lo que estás escribiendo
+  if (STEPS.includes(current())) return;
+  const y = window.scrollY; render(); window.scrollTo(0, y); // repinta sin moverte de donde estabas
 }
 // En la cuenta hay datos y en este dispositivo también: que elija la persona
 function askWhich(data) {
