@@ -68,7 +68,7 @@ async function initCuenta() {
     const { data } = await c.auth.getSession();
     USER = data.session?.user || null;
     if (vuelta) { history.replaceState(null, '', location.pathname + (location.hash.includes('access_token') ? '' : location.hash)); if (USER) toast('¡Dentro! Tu quatri ya se guarda en tu cuenta'); }
-    if (USER) await pull();
+    if (USER) { await pull(); programarAvisos(); } // al abrir, se rehacen los avisos de los próximos días
   } catch { /* sin conexión: seguimos con lo de este dispositivo */ }
   vigilarCambios();
 }
@@ -87,6 +87,7 @@ async function push() {
   if (error) return; // se reintentará en el próximo cambio
   S._sync = { uid: USER.id, at, dirty: false };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+  programarAvisos(); // tus cambios pueden mover clases, estudio o exámenes: se rehace la lista de avisos
 }
 async function pull() {
   if (!USER || !SB) return;
@@ -188,6 +189,93 @@ function openLogin() {
     } catch { err('El código no es correcto o ha caducado. Pide otro.'); }
   };
 }
+/* ---------- avisos (notificaciones) ----------
+   La app prepara la lista de avisos de los próximos días y la guarda en quatri_avisos;
+   un proceso en Supabase los envía a su hora a los dispositivos guardados en quatri_push.
+   S.avisos = { on, clase: minutos antes (0 = no), estudio, examen, resumen: 'HH:MM' | '' } */
+const VAPID_PUBLIC = 'BBGa8KHym0LVQk8PAyzxAMznuL22QSXvSjRWkTuZ-4u7LZFq6_9utkeYE7qC3ikDyIq68xd7Ubys7HuJL6gmmRQ';
+const AVISOS_DEF = { on: false, clase: 10, estudio: true, examen: true, resumen: '08:00' };
+const avisosCfg = () => ({ ...AVISOS_DEF, ...(S.avisos || {}) });
+const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+
+async function activarAvisos() {
+  if (!USER) { openLogin(); return false; }
+  if (!pushOk()) { toast(/iPhone|iPad/.test(navigator.userAgent) ? 'En el iPhone, los avisos funcionan con Quatri añadida a la pantalla de inicio.' : 'Este navegador no admite avisos.'); return false; }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { toast('Sin permiso no podemos avisarte. Puedes darlo en los ajustes del navegador.'); return false; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC) });
+    const j = sub.toJSON(), c = await sb();
+    const { error } = await c.from('quatri_push').upsert({ user_id: USER.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, { onConflict: 'endpoint' });
+    if (error) throw error;
+  } catch { toast('No se han podido activar los avisos en este dispositivo.'); return false; }
+  S.avisos = { ...avisosCfg(), on: true }; save(); programarAvisos(true);
+  return true;
+}
+async function desactivarAvisos() {
+  S.avisos = { ...avisosCfg(), on: false }; save();
+  try {
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (sub) { const c = await sb(); await c.from('quatri_push').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
+  } catch {}
+  programarAvisos(true);
+}
+// Lista de avisos de las próximas 2 semanas, según tu horario, tu estudio propuesto y tus exámenes
+// (se rehace cada vez que abres Quatri o cambias algo; así siguen llegando aunque pases días sin abrirla)
+function listaAvisos() {
+  const A = avisosCfg(), out = [], now = Date.now();
+  if (!A.on || !S.listo) return out;
+  const at = (ds, min) => { const d = dparse(ds); d.setMinutes(min); return d; };
+  const add = (d, titulo, cuerpo, ds) => { if (d.getTime() > now + 30000) out.push({ at: d.toISOString(), titulo, cuerpo, url: './#hoy' }); };
+  for (let i = 0; i < 14; i++) {
+    const ds = dkey(addDays(new Date(), i)), p = dayView(ds);
+    if (A.clase) for (const b of p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen'))
+      add(at(ds, b.s - A.clase), `${b.kind === 'examen' ? b.label : subj(b.code).n} a las ${fmt(b.s)}`, `${b.sub ? b.sub + ' · ' : ''}empieza en ${A.clase} min`);
+    if (A.estudio) for (const b of p.blocks.filter(b => b.kind === 'plan'))
+      add(at(ds, b.s), `Hora de estudiar: ${subj(b.code).n}`, `${b.tema ? b.tema + ' · ' : ''}${dur(b.e - b.s)}. Márcalo como hecho cuando acabes.`);
+    if (A.resumen) {
+      const est = p.blocks.filter(b => b.kind === 'plan').reduce((n, b) => n + b.e - b.s, 0);
+      add(at(ds, toMin(A.resumen)), 'Tu día en Quatri', [p.classMin ? `${dur(p.classMin)} de clase` : 'Sin clases', `${dur(p.freeMin)} libres de verdad`, est ? `${dur(est)} de estudio` : ''].filter(Boolean).join(' · '));
+    }
+  }
+  if (A.examen) {
+    const hoy = dkey(new Date());
+    for (const c of S.asignaturas || []) for (const e of examsOf(c)) {
+      const dias = Math.round((dparse(e[1]) - dparse(hoy)) / 864e5);
+      if (dias < 1 || dias > 21) continue;
+      const nom = `${exName(e)} de ${subj(c).n}`;
+      for (const antes of [7, 3, 1]) if (dias >= antes) add(at(dkey(addDays(dparse(e[1]), -antes)), 20 * 60),
+        antes === 1 ? `Mañana: ${nom}` : `En ${antes} días: ${nom}`, `${e[2] ? `${e[2]}–${e[3]}` : 'Sin hora'}${e[4] ? ' · ' + e[4] : ''}`);
+    }
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).slice(0, 400);
+}
+// Sube la lista nueva (sustituye los avisos aún no enviados). force: ahora mismo; si no, espera un poco.
+let AV_T = null;
+function programarAvisos(force) {
+  if (!USER) return;
+  clearTimeout(AV_T);
+  AV_T = setTimeout(async () => {
+    try {
+      const c = await sb(), lista = listaAvisos();
+      await c.from('quatri_avisos').delete().eq('user_id', USER.id).eq('enviado', false);
+      if (lista.length) await c.from('quatri_avisos').insert(lista.map(x => ({ ...x, user_id: USER.id })));
+    } catch {}
+  }, force ? 0 : 4000);
+}
+// solo en la copia de pruebas del ordenador: para revisar la lista de avisos sin enviarlos
+if (location.hostname === 'localhost') window.__quatri = { listaAvisos, setAvisos: a => { S.avisos = { ...avisosCfg(), ...a }; } };
+async function avisoPrueba() {
+  try {
+    const c = await sb();
+    const { error } = await c.from('quatri_avisos').insert({ user_id: USER.id, at: new Date().toISOString(), titulo: 'Quatri funciona', cuerpo: 'Así te llegarán los avisos.', url: './#ajustes' });
+    if (error) throw error;
+    toast('Aviso de prueba enviado: llega en menos de un minuto');
+  } catch { toast('No se ha podido enviar el aviso de prueba.'); }
+}
+
 async function logout() {
   try { const c = await sb(); await c.auth.signOut(); } catch {}
   USER = null;
@@ -2247,6 +2335,24 @@ function viewAjustes() {
       : `<p style="margin:0">Ahora tus datos solo están en este dispositivo. Entra para guardarlos y tener lo mismo en el móvil y en el ordenador.</p>
         <button class="btn primary" id="aIn">Entrar o crear cuenta</button>`}
     </section>
+    ${(() => {
+      const A = avisosCfg();
+      const sel = (id, opts, val) => `<select id="${id}">${opts.map(([v, t]) => `<option value="${v}" ${String(val) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+      return `<section class="card stack" style="margin-bottom:12px">
+        <div class="eyebrow">Avisos</div>
+        ${!USER ? `<p style="margin:0">Entra en tu cuenta para recibir avisos de clases, estudio y exámenes, aunque tengas Quatri cerrada.</p>`
+        : `<p style="margin:0" id="avDev">Comprobando este dispositivo…</p>
+          <div id="avOpts" class="stack" ${A.on ? '' : 'hidden'}>
+            <div class="fields">
+              <label class="field"><span>Antes de cada clase</span>${sel('avC', [[0, 'No avisar'], [5, '5 min antes'], [10, '10 min antes'], [15, '15 min antes'], [30, '30 min antes']], A.clase)}</label>
+              <label class="field"><span>Resumen del día</span>${sel('avR', [['', 'No'], ['07:00', 'A las 7:00'], ['07:30', 'A las 7:30'], ['08:00', 'A las 8:00'], ['08:30', 'A las 8:30'], ['09:00', 'A las 9:00']], A.resumen)}</label>
+            </div>
+            <label class="check"><input type="checkbox" id="avE" ${A.estudio ? 'checked' : ''}> Cuando empieza un bloque de estudio</label>
+            <label class="check"><input type="checkbox" id="avX" ${A.examen ? 'checked' : ''}> Exámenes y controles (7, 3 y 1 día antes, a las 20:00)</label>
+            <button class="btn small" id="avTest" style="align-self:flex-start">Enviarme un aviso de prueba</button>
+          </div>`}
+      </section>`;
+    })()}
     <section class="card stack" style="margin-bottom:12px">
       <div class="eyebrow">Apariencia</div>
       <div class="seg2" role="group" aria-label="Modo de color" style="margin:0">
@@ -2268,6 +2374,24 @@ function viewAjustes() {
     <p class="hint" style="margin-top:18px">Horarios: Visor d'Horaris UPC · Créditos, temario y evaluación: guías docentes UPC · <a href="privacidad.html" target="_blank" rel="noopener">Privacidad</a></p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   if ($('#aIn')) $('#aIn').onclick = openLogin;
+  // avisos: ¿está activado en ESTE dispositivo? (cada móvil u ordenador se activa por separado)
+  if ($('#avDev')) (async () => {
+    let sub = null;
+    try { if (pushOk()) sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch {}
+    const on = avisosCfg().on && sub && Notification.permission === 'granted';
+    const el = $('#avDev'); if (!el) return;
+    el.innerHTML = on ? `<b>Activados en este dispositivo.</b> <button class="link" id="avOff">Desactivar</button>`
+      : `${avisosCfg().on ? 'Tienes los avisos activados en otro dispositivo, pero no en este.' : 'Te avisamos antes de clase, al empezar a estudiar y antes de los exámenes.'}
+        <br><button class="btn primary small" id="avOn" style="margin-top:8px">Activar avisos aquí</button>`;
+    if ($('#avOn')) $('#avOn').onclick = async () => { if (await activarAvisos()) { toast('Avisos activados'); viewAjustes(); } };
+    if ($('#avOff')) $('#avOff').onclick = async () => { await desactivarAvisos(); toast('Avisos desactivados'); viewAjustes(); };
+  })();
+  const avSave = () => {
+    S.avisos = { ...avisosCfg(), clase: Number($('#avC').value), resumen: $('#avR').value, estudio: $('#avE').checked, examen: $('#avX').checked };
+    save(); programarAvisos(true); toast('Guardado');
+  };
+  ['#avC', '#avR', '#avE', '#avX'].forEach(id => { if ($(id)) $(id).onchange = avSave; });
+  if ($('#avTest')) $('#avTest').onclick = avisoPrueba;
   if ($('#aOut')) $('#aOut').onclick = () => {
     const c = $('#aConf'); c.hidden = false;
     c.innerHTML = `<span>Se borrarán los datos de este dispositivo. En tu cuenta siguen guardados y vuelven al entrar.</span><div class="row"><button class="btn" id="oY">Cerrar sesión</button><button class="btn" id="oN">Cancelar</button></div>`;
