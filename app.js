@@ -379,6 +379,12 @@ function viewRutina() {
         <label class="check"><input type="checkbox" id="merienda" ${R.merienda ? 'checked' : ''}> Merienda o pausa por la tarde (30 min)</label>
         <div class="fields" id="mBox" ${R.merienda ? '' : 'hidden'}>${time('meriendaHora', 'Hacia las', R.meriendaHora)}</div>
       </section>
+      <section class="card stack"><div class="eyebrow">Estudio</div>
+        <div class="fields">
+          <label class="field"><span>Un día normal te ves estudiando</span><select id="estS">${[1, 1.5, 2, 3, 4].map(h => `<option value="${h}" ${(S.estMax?.semana ?? 2) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
+          <label class="field"><span>Un día de fin de semana</span><select id="estF">${[0, 1, 2, 3, 4, 5].map(h => `<option value="${h}" ${(S.estMax?.finde ?? 3) === h ? 'selected' : ''}>${h ? hfmt(h) : 'Nada'}</option>`).join('')}</select></label>
+        </div>
+        <small class="hint">Quatri reparte tu estudio en tus huecos libres sin pasar de esto al día. En época de exámenes, más.</small></section>
       <section class="card stack"><div class="eyebrow">La noche</div>
         <div class="fields">${time('dormir', 'Te vas a dormir a las', R.dormir)}</div>
         <label class="check"><input type="checkbox" id="estudiaNoche" ${R.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
@@ -391,6 +397,7 @@ function viewRutina() {
       R[k] = el.type === 'checkbox' ? el.checked : (el.tagName === 'SELECT' ? Number(el.value) : el.value || RUTINA_DEF[k]);
     }
     $('#mBox').hidden = !R.merienda;
+    S.estMax = { semana: Number($('#estS').value), finde: Number($('#estF').value) };
     save();
   };
   v.querySelectorAll('input,select').forEach(el => el.onchange = read);
@@ -1098,7 +1105,7 @@ function tabs(active) {
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     // tocar la pestaña en la que ya estás te devuelve a hoy / esta semana
     if (b.dataset.tab === active && active === 'hoy') { S.dia = dkey(new Date()); save(); viewHoy(); return; }
-    if (b.dataset.tab === active && active === 'estudio') { S.semana = dkey(mondayOf(new Date())); save(); viewEstudio(); return; }
+    if (b.dataset.tab === active && active === 'estudio') { S.estOff = 0; save(); viewEstudio(); return; }
     if (b.dataset.tab === active && active === 'calendario') { calToday(); viewCalendario(); return; }
     go(b.dataset.tab);
   });
@@ -1297,7 +1304,8 @@ function calMonth() {
 /* ---------- cuánto prepararte y exámenes propios ---------- */
 // Las horas de la guía docente son generosas: el alumno elige qué parte de ellas quiere cubrir.
 const RITMOS = [[0.45, 'Lo justo'], [0.6, 'Normal'], [0.8, 'Bien preparado'], [1, 'Lo que dice la guía']];
-const ritmo = () => S.ritmo ?? 0.6;
+// si no lo ha elegido, sale de cuánto se ve estudiando al día (1 h -> lo justo … 4 h -> lo que dice la guía)
+const ritmo = () => { if (S.ritmo != null) return S.ritmo; const h = S.estMax?.semana ?? 2; return h <= 1 ? 0.45 : h <= 2 ? 0.6 : h <= 3 ? 0.8 : 1; };
 // Exámenes que añade el alumno (controles, evaluación continua...): S.examenes[id] = { code, tipo, nombre, fecha, ini, fin, temas: [ids] }
 const EX_TIPOS = [['control', 'Control'], ['parcial', 'Parcial'], ['final', 'Final'], ['entrega', 'Entrega']];
 // Todos los exámenes de una asignatura con el mismo formato: [tipo, fecha, ini, fin, aulas, id propio, nombre, temas]
@@ -1311,9 +1319,16 @@ const exName = e => e[6] || (EX_TIPOS.find(t => t[0] === e[0])?.[1] || e[0]);
 const exRef = e => e[5] ? `«${exName(e)}»` : `el ${e[0]}`;
 
 /* ---------- plan de estudio semanal ---------- */
-const LEVELS = [['bien', 'Bien', 0.7], ['normal', 'Normal', 1], ['cuesta', 'Me cuesta', 1.4], ['no', 'No la estudio', 0]];
-// Por defecto "Normal"; si la asignatura no tiene exámenes (como Ampliació d'Informàtica), empieza en "No la estudio".
-const levelOf = c => (S.estudio?.nivel || {})[c] || (examsOf(c).length ? 'normal' : 'no');
+// ¿Estudias esta asignatura? Por defecto sí si tiene exámenes (Ampliació d'Informàtica no tiene: empieza en "no").
+// Cómo la llevas ya no se pregunta: se deduce del temario (lo que te queda frente a lo que entra).
+const levelOf = c => { const n = (S.estudio?.nivel || {})[c]; return n === 'no' ? 'no' : n ? 'si' : (examsOf(c).length ? 'si' : 'no'); };
+// Ventana de estudio: 7 días a partir de hoy (off = 0), o los 7 siguientes (off = 1)…
+const estStart = (off = 0) => dkey(addDays(dparse(dkey(new Date())), 7 * off));
+// ventana a la que pertenece un día (null si ya ha pasado)
+function estStartOf(ds) {
+  const t0 = dparse(dkey(new Date())), diff = Math.round((dparse(ds) - t0) / 864e5);
+  return diff < 0 ? null : dkey(addDays(t0, 7 * Math.floor(diff / 7)));
+}
 function classWeeks() {
   const c = D.calendario;
   return Math.max(1, (dparse(c.fin_clases) - dparse(c.inicio_clases)) / (7 * 864e5));
@@ -1334,14 +1349,17 @@ function weekPlan(monKey) {
   const enEx = days.some(p => p.exRut);
   const codes = (S.asignaturas || []).slice();
   const rows = codes.map(c => {
-    const a = subj(c), lv = levelOf(c), f = LEVELS.find(l => l[0] === lv)[2];
+    const a = subj(c), lv = levelOf(c);
     const oficial = (a.h || (a.cr || 0) * 15) / classWeeks();
     const ex = nextExam(c, monKey);
     const daysTo = ex ? Math.round((dparse(ex[1]) - mon) / 864e5) : null;
     const urg = daysTo == null ? 1 : daysTo <= 14 ? 1.6 : daysTo <= 30 ? 1.25 : 1;
+    // cómo la llevas, según el temario: de 0,7 (casi todo hecho) a 1,4 (todo por hacer)
+    const P = TM && lv !== 'no' ? temasSemana(c, 0, monKey, ex, daysTo) : null;
+    const f = P && P.full ? 0.7 + 0.7 * Math.min(1, P.total / P.full) : 1;
     // en época de exámenes manda lo que te queda de temario hasta el examen, no el ritmo del curso
     let need = null;
-    if (enEx && TM && ex) { const P = temasSemana(c, 0, monKey, ex, daysTo); if (P && P.semanas) need = P.total / P.semanas; }
+    if (enEx && P && P.semanas) need = P.total / P.semanas;
     return { c, a, lv, oficial, ex, daysTo, need, w: need != null ? need * f : oficial * f * urg };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
@@ -1433,102 +1451,114 @@ function weekSchedule(monKey) {
 function dayView(ds) {
   const p = dayPlan(ds);
   if (!S.listo || !(S.asignaturas || []).length) return { ...p, plan: [], planMin: 0 };
-  const plan = weekSchedule(dkey(mondayOf(dparse(ds))))[ds] || [];
+  const st = estStartOf(ds), plan = st ? weekSchedule(st)[ds] || [] : [];
   let free = p.free.map(f => ({ ...f }));
   for (const b of plan) free = free.flatMap(f => f.e <= b.s || f.s >= b.e ? [f] : [{ ...f, e: b.s }, { ...f, s: b.e }]);
   free = free.filter(f => f.e - f.s >= 15);
   return { ...p, blocks: [...p.blocks, ...plan].sort((a, b) => a.s - b.s), free, plan, planMin: plan.reduce((n, b) => n + b.e - b.s, 0) };
 }
 
-// Bloque "Esta semana toca" de cada asignatura en la pestaña Estudio
-function temPlanHtml(r) {
+// "Estos días toca" de cada asignatura + si llegas al examen, en una línea
+function temPlanHtml(r, start) {
   if (r.lv === 'no' || !r.horas || !TM) return '';
-  const P = temasSemana(r.c, r.horas, S.semana, r.ex, r.daysTo);
+  const P = temasSemana(r.c, r.horas, start, r.ex, r.daysTo);
   if (!P || !P.out.length) return '';
   const ref = r.ex ? (r.ex[0] === 'final' && !r.ex[5] && finalModo(r.c) === 'segunda' ? 'el segundo parcial' : exRef(r.ex)) : null;
-  const aRef = ref ? (ref.startsWith('el ') ? 'al ' + ref.slice(3) : 'a ' + ref) : 'a tiempo';
   const ST = Object.fromEntries(TEM_ST);
   let msg = '';
   // hasta que no marques cómo llevas los temas, no sabemos cuánto te queda de verdad
   const marcado = (temasOf(r.c) || []).some(t => t.st !== 'nuevo');
-  if (!marcado) msg = `<small class="hint">Marca en el temario los temas que ya tienes y te diremos si llegas ${aRef}.</small>`;
-  else if (P.capacidad != null) msg = P.total > P.capacidad + 0.5
-    ? `<small class="hint urg">Para ${ref} (en ${r.daysTo} días) te quedan unas ${hfmt(P.total)} de temario y a este ritmo llegas a ${hfmt(P.capacidad)}. Sube las horas o marca lo que ya tienes.</small>`
-    : `<small class="hint ok">A este ritmo llegas ${aRef}: te quedan unas ${hfmt(P.total)} de temario y tienes ${hfmt(P.capacidad)} hasta el examen.</small>`;
-  return `<div class="tplan"><div class="eyebrow">Esta semana toca</div>
+  if (!marcado) msg = `<small class="hint">Marca en el temario lo que ya tienes para saber si llegas.</small>`;
+  else if (P.capacidad != null && ref) msg = P.total > P.capacidad + 0.5
+    ? `<small class="hint urg">A este ritmo no llegas a ${ref}: te faltan unas ${hfmt(P.total - P.capacidad)}.</small>`
+    : `<small class="hint ok">Vas bien para ${ref}.</small>`;
+  return `<div class="tplan"><div class="eyebrow">Estos días toca</div>
     <ul>${P.out.map(x => `<li><span>${esc(x.t.t)}<small>${ST[x.t.st]}</small></span><b>${hfmt(x.h)}</b></li>`).join('')}</ul>${msg}</div>`;
 }
 
+// Estudio: lo importante a la vista (cuántas horas, qué toca, si llegas); lo demás, dentro de "Ajustar".
 function viewEstudio() {
-  S.semana = S.semana || dkey(mondayOf(new Date()));
-  // el temario de la guía se carga aparte; cuando llega, se vuelve a pintar con "Esta semana toca"
-  if (!TM) loadTemarios().then(() => { if (current() === 'estudio') { const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); } });
-  const W = weekPlan(S.semana), E = S.estudio, mon = dparse(S.semana), sun = addDays(mon, 6);
-  const thisMon = dkey(mondayOf(new Date()));
-  const label = S.semana === thisMon ? 'Esta semana' : S.semana === dkey(addDays(mondayOf(new Date()), 7)) ? 'La semana que viene' : 'Semana';
-  const freeH = W.freeMin / 60, over = W.total > freeH;
+  // el temario de la guía se carga aparte; cuando llega, se vuelve a pintar con "Estos días toca"
+  if (!TM) loadTemarios().then(() => { PLAN_CACHE = {}; if (current() === 'estudio') { const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); } });
+  const off = Math.max(0, S.estOff || 0), start = estStart(off);
+  const W = weekPlan(start), E = S.estudio, a = dparse(start), b = addDays(a, 6);
+  const sin = weekSchedule(start)._sinHueco;
+  const m3 = d => MONTHS[d.getMonth()].slice(0, 3);
+  const si = W.rows.filter(r => r.lv !== 'no'), no = W.rows.filter(r => r.lv === 'no');
+  // aviso con la solución en un toque: subir el máximo diario o quedarse con lo que cabe
+  const X = W.enEx ? rutinaEx() : null, maxS = X ? X.maxSemana : (S.estMax?.semana ?? 2);
+  const aviso = sin < 30 ? '' : `<div class="notice warn stack" style="margin-top:10px">
+      <span>${off ? 'Esos' : 'Estos'} 7 días no te da tiempo a todo: faltan unas ${hfmt(sin / 60)}.</span>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        ${maxS < (X ? 10 : 5) ? `<button class="btn small primary" id="avUp">Subir a ${hfmt(maxS + 1)} al día</button>` : ''}
+        <button class="btn small" id="avOk">Así está bien</button>
+      </div></div>`;
   const v = $('#view');
   v.innerHTML = `
     <div class="dayhead">
-      <button class="icon" id="prev" aria-label="Semana anterior">‹</button>
-      <div class="dh"><div class="eyebrow">${label}</div>
-        <h1>${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}</h1>
-        ${S.semana !== thisMon ? '<button class="todaybtn" id="thisweek">Volver a esta semana</button>' : ''}</div>
-      <button class="icon" id="next" aria-label="Semana siguiente">›</button>
+      <button class="icon" id="prev" aria-label="Días anteriores" ${off ? '' : 'disabled'}>‹</button>
+      <div class="dh"><div class="eyebrow">${off ? 'Más adelante' : 'Próximos 7 días'}</div>
+        <h1>${a.getDate()} ${m3(a)} – ${b.getDate()} ${m3(b)}</h1>
+        ${off ? '<button class="todaybtn" id="thisweek">Volver a hoy</button>' : ''}</div>
+      <button class="icon" id="next" aria-label="Días siguientes">›</button>
     </div>
-    <div class="stats">
-      <div class="stat free"><b>${dur(W.freeMin)}</b><span>libres de verdad esta semana</span></div>
-      <div class="stat"><b>${hfmt(W.total)}</b><span>de estudio planificadas</span></div>
-    </div>
-    <section class="card stack" style="margin-top:12px">
-      <div class="eyebrow">¿Cuántas horas quieres estudiar esta semana?</div>
-      <div class="stepper big">
-        <button id="oMinus" aria-label="Menos horas">−</button>
-        <output id="obj">${hfmt(W.objetivo)}</output>
-        <button id="oPlus" aria-label="Más horas">+</button>
-      </div>
-      <small class="hint">Te proponemos ${hfmt(W.sugerido)}: un 40 % de tus horas libres, sin pasar del ${Math.round(ritmo() * 100)} % de lo que pide la guía docente (${hfmt(W.oficialTotal)} a la semana).${E.objetivo != null && E.objetivo !== W.sugerido ? ' <button class="link" id="oReset">Volver a la propuesta</button>' : ''}</small>
-      <div class="field" style="margin-top:4px"><span>¿Cuánto quieres prepararte?</span>
-        <div class="seg2 four" role="group" style="margin:0">${RITMOS.map(([f, t]) => `<button data-ritmo="${f}" aria-pressed="${ritmo() === f}">${t}<small>${Math.round(f * 100)} %</small></button>`).join('')}</div>
-        <small>Las horas de la guía docente son generosas y casi nadie las hace todas. Elige qué parte quieres cubrir.</small></div>
-      ${over ? `<div class="notice bad">Has planificado más horas de las que tienes libres. Baja el objetivo o revisa tu rutina.</div>` : ''}
-      ${(() => {
-        if (S.semana < thisMon) return '';
-        const sin = weekSchedule(S.semana)._sinHueco;
-        return sin >= 30 ? `<div class="notice warn">No caben ${dur(Math.round(sin / 15) * 15)} en tus huecos de esta semana con tu máximo diario. Súbelo en Ajustes o baja el objetivo.</div>`
-          : `<small class="hint ok">Quatri reparte estas horas en tus huecos libres: las ves como «Propuesta» en Hoy y en Calendario.</small>`;
-      })()}
-      ${W.enEx ? `<small class="hint">Época de exámenes: las horas se calculan con lo que te queda de temario hasta cada examen.</small>` : ''}
-      ${W.total !== W.objetivo ? `<div class="notice warn">Con tus ajustes suman ${hfmt(W.total)}, no ${hfmt(W.objetivo)}.</div>` : ''}
+    <section class="card est-sum">
+      <div class="est-big"><b>${hfmt(W.total)}</b><span>de estudio</span></div>
+      <p class="hint" style="margin:0">${W.total ? 'Ya repartidas en tus huecos libres: las ves como «Propuesta» en Hoy y en Calendario.' : 'No hay nada que estudiar estos días.'}
+        ${W.enEx ? ' Época de exámenes: las horas salen de lo que te queda de temario.' : ''}</p>
+      ${aviso}
     </section>
-    <h2 class="sec">Reparto por asignatura</h2>
-    <p class="lead" style="margin-bottom:10px">Dinos cómo llevas cada una y ajusta las horas si lo ves distinto. Lo que no toques se reparte solo.</p>
-    <div class="stack">
-      ${W.rows.map(r => `
+    <div class="stack" style="margin-top:12px">
+      ${si.map(r => `
         <div class="card subjplan" style="${colorVars(r.c)}">
           <div class="sp-head">
             <span class="bar"></span>
             <div class="sp-name"><b>${esc(r.a.n)}</b>
-              <small>${r.a.cr ? num(r.a.cr) + ' cr · ' : ''}guía: ${hfmt(r.oficial)}/sem${r.ex ? ` · ${esc(exName(r.ex).toLowerCase())} en ${r.daysTo} días` : ''}</small></div>
-            ${r.lv === 'no' ? '' : `<div class="stepper">
-              <button data-m="${r.c}" aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p="${r.c}" aria-label="Más">+</button></div>`}
+              <small>${r.ex ? `${esc(exName(r.ex))} en ${r.daysTo} días` : 'Sin examen a la vista'}${r.hecho ? ` · ya llevas ${hfmt(r.hecho)}` : ''}</small></div>
+            <b class="sp-h">${hfmt(r.horas)}</b>
           </div>
-          <div class="levels" role="group" aria-label="Cómo la llevas">
-            ${LEVELS.map(([id, txt]) => `<button data-l="${r.c}" data-v="${id}" aria-pressed="${r.lv === id}">${txt}</button>`).join('')}
-          </div>
-          ${temPlanHtml(r)}
+          ${temPlanHtml(r, start)}
           <button class="temlink" data-tem="${r.c}"><span>Temario y exámenes${(() => { const p = temProgress(r.c); return p.n ? ` · ${p.ok} de ${p.n} temas que ya tienes` : ''; })()}</span><span aria-hidden="true">›</span></button>
-          ${r.hecho ? `<small class="hint ok">Ya llevas ${hfmt(r.hecho)} esta semana (hechas o en vez de una clase) · ${r.pend ? `te quedan ${hfmt(r.pend)} por colocar en tus huecos` : 'no te queda nada más por colocar'}</small>` : ''}
-          ${r.manual ? `<small class="hint">Ajustada a mano · <button class="link" data-r="${r.c}">volver a automático</button></small>` : ''}
-          ${r.daysTo != null && r.daysTo <= 30 && r.lv !== 'no' ? `<small class="hint urg">Examen cerca: le damos más peso.</small>` : ''}
         </div>`).join('')}
     </div>
-    <p class="hint" style="margin-top:14px">Estas horas son tu objetivo para la semana. Tú decides cuándo: usa los huecos verdes de la pestaña Hoy.</p>`;
+    <button class="btn adj-btn" id="adjBtn" aria-expanded="${!!S.estAdv}">Ajustar ${S.estAdv ? '▴' : '▾'}</button>
+    <div id="adv" class="stack" ${S.estAdv ? '' : 'hidden'}>
+      <section class="card stack">
+        <div class="eyebrow">Horas de estudio de estos 7 días</div>
+        <div class="stepper big">
+          <button id="oMinus" aria-label="Menos horas">−</button>
+          <output id="obj">${hfmt(W.objetivo)}</output>
+          <button id="oPlus" aria-label="Más horas">+</button>
+        </div>
+        <small class="hint">Te proponemos ${hfmt(W.sugerido)}.${E.objetivo != null && E.objetivo !== W.sugerido ? ' <button class="link" id="oReset">Volver a la propuesta</button>' : ''}</small>
+      </section>
+      <section class="card stack">
+        <div class="eyebrow">¿Cuánto quieres prepararte?</div>
+        <div class="seg2 four" role="group" style="margin:0">${RITMOS.map(([f, t]) => `<button data-ritmo="${f}" aria-pressed="${ritmo() === f}">${t}<small>${Math.round(f * 100)} %</small></button>`).join('')}</div>
+        <small class="hint">Parte de las horas de la guía docente que quieres cubrir. Casi nadie las hace todas.</small>
+      </section>
+      <section class="card stack">
+        <div class="eyebrow">Horas por asignatura</div>
+        ${W.rows.map(r => `<div class="adj-row" style="${colorVars(r.c)}"><span class="dot-c"></span><span class="adj-n">${esc(r.a.s)}<small>${esc(r.a.n)}</small></span>
+          ${r.lv === 'no' ? `<button class="btn small" data-l="${r.c}" data-v="si">La estudio</button>`
+            : `<div class="stepper"><button data-m="${r.c}" aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p="${r.c}" aria-label="Más">+</button></div>`}
+          </div>
+          ${r.lv !== 'no' ? `<div class="adj-sub">${r.manual ? `Ajustada a mano · <button class="link" data-r="${r.c}">automático</button> · ` : ''}<button class="link" data-l="${r.c}" data-v="no">No la estudio</button></div>` : ''}`).join('')}
+        <small class="hint">Lo que no toques se reparte solo, según cómo llevas el temario y lo cerca que está cada examen.</small>
+      </section>
+    </div>`;
   const step = (cur, d) => Math.max(0, Math.round((cur + d) * 2) / 2);
   const rerender = () => { save(); const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); };
+  $('#adjBtn').onclick = () => { S.estAdv = !S.estAdv; rerender(); };
   $('#oMinus').onclick = () => { E.objetivo = step(W.objetivo, -1); rerender(); };
   $('#oPlus').onclick = () => { E.objetivo = step(W.objetivo, 1); rerender(); };
   if ($('#oReset')) $('#oReset').onclick = () => { delete E.objetivo; rerender(); };
+  if ($('#avUp')) $('#avUp').onclick = () => {
+    if (X) S.rutinaEx = { ...rutinaEx(), maxSemana: X.maxSemana + 1, maxFinde: Math.max(X.maxFinde, X.maxSemana + 1) };
+    else { const m = S.estMax || {}; S.estMax = { semana: maxS + 1, finde: Math.max(m.finde ?? 3, maxS + 1) }; }
+    toast(`Ahora hasta ${hfmt(maxS + 1)} de estudio al día`); rerender();
+  };
+  if ($('#avOk')) $('#avOk').onclick = () => { E.objetivo = Math.max(1, Math.floor((W.total * 60 - sin) / 30) / 2); toast('Te proponemos solo lo que cabe'); rerender(); };
   v.querySelectorAll('[data-m],[data-p]').forEach(b => b.onclick = () => {
     const c = b.dataset.m || b.dataset.p, r = W.rows.find(x => x.c === c);
     E.ajuste[c] = step(r.horas, b.dataset.m ? -0.5 : 0.5); rerender();
@@ -1539,11 +1569,11 @@ function viewEstudio() {
   v.querySelectorAll('[data-l]').forEach(b => b.onclick = () => {
     E.nivel[b.dataset.l] = b.dataset.v; if (b.dataset.v === 'no') delete E.ajuste[b.dataset.l]; rerender();
   });
-  const shiftW = n => { S.semana = dkey(addDays(dparse(S.semana), 7 * n)); save(); viewEstudio(); };
-  $('#prev').onclick = () => slideTo(v, -1, shiftW);
+  const shiftW = n => { S.estOff = Math.max(0, off + n); save(); viewEstudio(); };
+  $('#prev').onclick = () => { if (off) slideTo(v, -1, shiftW); };
   $('#next').onclick = () => slideTo(v, 1, shiftW);
-  if ($('#thisweek')) $('#thisweek').onclick = () => slideTo(v, S.semana > thisMon ? -1 : 1, () => { S.semana = thisMon; save(); viewEstudio(); });
-  swipe(v, shiftW);
+  if ($('#thisweek')) $('#thisweek').onclick = () => slideTo(v, -1, () => { S.estOff = 0; save(); viewEstudio(); });
+  swipe(v, n => { if (n < 0 && !off) { viewEstudio(); return; } shiftW(n); });
   tabs('estudio');
 }
 
@@ -1626,7 +1656,9 @@ function temasSemana(code, horas, monKey, ex, daysTo) {
     out.push({ t: x.t, h: give }); left -= give;
   }
   const semanas = daysTo == null ? null : Math.max(1, Math.ceil(daysTo / 7));
-  return { out, total, semanas, capacidad: semanas ? horas * semanas : null, n: list.length };
+  // lo que pediría el temario entero que entra si no tuvieras nada hecho: sirve para saber cómo llevas la asignatura
+  const full = ts.reduce((n, t, i) => n + (entra(t, i) ? (Number(t.h) || 3) * ritmo() : 0), 0);
+  return { out, total, full, semanas, capacidad: semanas ? horas * semanas : null, n: list.length };
 }
 
 function openTemario(code) { S.temCode = code; save(); go('temario'); }
@@ -1929,17 +1961,9 @@ function viewAjustes() {
       </div>
       <small class="hint">Automático sigue el modo de tu móvil.</small>
     </section>
-    <section class="card stack" style="margin-bottom:12px">
-      <div class="eyebrow">Estudio que coloca Quatri</div>
-      <div class="fields">
-        <label class="field"><span>Máximo al día entre semana</span><select id="emS">${[1, 1.5, 2, 2.5, 3, 4, 5].map(h => `<option value="${h}" ${(S.estMax?.semana ?? 2) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
-        <label class="field"><span>Máximo al día el fin de semana</span><select id="emF">${[1, 2, 3, 4, 5, 6].map(h => `<option value="${h}" ${(S.estMax?.finde ?? 3) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
-      </div>
-      <small class="hint">Quatri reparte tus horas de estudio en tus huecos libres sin pasar de esto. En época de exámenes manda la rutina de exámenes.</small>
-    </section>
     <div class="stack">
       <button class="choice" data-go="rutinaex"><span><b>Rutina de exámenes</b><span class="code">Cómo cambia tu día en parciales y finales</span></span></button>
-      <button class="choice" data-go="rutina"><span><b>Mi rutina</b><span class="code">Trayecto, comidas, descansos y sueño</span></span></button>
+      <button class="choice" data-go="rutina"><span><b>Mi rutina</b><span class="code">Trayecto, comidas, sueño y cuánto estudias al día</span></span></button>
       <button class="choice" data-go="semana"><span><b>Mi horario de clases</b><span class="code">Semana tipo y avisos de solapes</span></span></button>
       <button class="choice" data-go="grupos"><span><b>Mis grupos</b><span class="code">Cambiar de subgrupo en alguna asignatura</span></span></button>
       <button class="choice" data-go="asignaturas"><span><b>Mis asignaturas</b><span class="code">Añadir o quitar asignaturas</span></span></button>
@@ -1949,8 +1973,6 @@ function viewAjustes() {
     <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   v.querySelectorAll('[data-tema]').forEach(b => b.onclick = () => { S.tema = b.dataset.tema; save(); applyTheme(); viewAjustes(); });
-  const em = () => { S.estMax = { semana: Number($('#emS').value), finde: Number($('#emF').value) }; save(); toast('Guardado'); };
-  $('#emS').onchange = em; $('#emF').onchange = em;
   tabs('ajustes');
 }
 
