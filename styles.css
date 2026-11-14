@@ -297,6 +297,13 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 }
 @media (min-width:1400px){ .est-grid{grid-template-columns:repeat(3,minmax(0,1fr))} }
 
+/* entrar / cuenta */
+.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;font-weight:600;background:var(--surface);border:1px solid var(--line)}
+.gbtn .g{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285F4;font-weight:800;font-family:Arial,sans-serif;box-shadow:0 0 0 1px #DADCE0}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.cuenta .row{gap:8px}
+
 /* estudio simplificado */
 .est-sum{display:flex;flex-direction:column;gap:6px}
 .est-big{display:flex;align-items:baseline;gap:8px}

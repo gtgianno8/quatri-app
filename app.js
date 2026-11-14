@@ -26,9 +26,177 @@ function load() {
 }
 function save() {
   PLAN_CACHE = {}; // cualquier cambio puede mover el estudio colocado en la semana
+  if (USER) S._sync = { ...(S._sync || {}), uid: USER.id, dirty: true };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { toast('No se ha podido guardar en este dispositivo.'); }
+  if (USER) { clearTimeout(SYNC_T); SYNC_T = setTimeout(push, 1500); } // sube los cambios a tu cuenta
 }
 let PLAN_CACHE = {};
+
+/* ---------- cuenta y sincronización (Supabase) ----------
+   Sin cuenta, todo vive en este dispositivo. Con cuenta, el estado se guarda también en la tabla
+   quatri_datos (una fila por persona, protegida para que solo la vea su dueño) y se comparte
+   entre el móvil y el ordenador. Gana lo último que se cambió. */
+const SB_URL = 'https://zoswzpewqehvdkewvbls.supabase.co';
+const SB_KEY = 'sb_publishable_PctIIFGPaAgc0HR9wi0jAQ_Lwd0t86s'; // clave pública: puede ir en la web
+const SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
+const SB_STORE = 'sb-zoswzpewqehvdkewvbls-auth-token';
+let SB = null, USER = null, SYNC_T = null;
+// cosas de cada dispositivo que no se suben (qué día estás mirando, el modo claro/oscuro...)
+const LOCAL_ONLY = ['dia', 'calSemana', 'calMes', 'calVista', 'temCode', 'estOff', 'estAdv', 'semana', 'tema', '_sync'];
+const forCloud = () => Object.fromEntries(Object.entries(S).filter(([k]) => !LOCAL_ONLY.includes(k)));
+const authRedirect = () => location.origin + location.pathname;
+
+async function sb() {
+  if (SB) return SB;
+  const { createClient } = await import(SB_LIB);
+  SB = createClient(SB_URL, SB_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
+  SB.auth.onAuthStateChange((ev, session) => {
+    const u = session?.user || null, nuevo = u && u.id !== USER?.id;
+    USER = u;
+    if (nuevo) setTimeout(() => pull(), 0);
+    if (['ajustes', 'bienvenida', 'listo'].includes(current())) render();
+  });
+  return SB;
+}
+// Arranque: solo se carga Supabase si hay sesión guardada o vienes de iniciar sesión
+async function initCuenta() {
+  const vuelta = /[?&]code=/.test(location.search) || /access_token=/.test(location.hash);
+  let tiene = false; try { tiene = !!localStorage.getItem(SB_STORE); } catch {}
+  if (!vuelta && !tiene) return;
+  try {
+    const c = await sb();
+    const { data } = await c.auth.getSession();
+    USER = data.session?.user || null;
+    if (vuelta) { history.replaceState(null, '', location.pathname + (location.hash.includes('access_token') ? '' : location.hash)); if (USER) toast('¡Dentro! Tu quatri ya se guarda en tu cuenta'); }
+    if (USER) await pull();
+  } catch { /* sin conexión: seguimos con lo de este dispositivo */ }
+  // al volver a la app (cambiar de pestaña, desbloquear el móvil) se trae lo último de tu cuenta
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && USER) pull(); });
+}
+async function push() {
+  if (!USER || !SB) return;
+  const at = new Date().toISOString();
+  const { error } = await SB.from('quatri_datos').upsert({ user_id: USER.id, datos: forCloud(), actualizado: at });
+  if (error) return; // se reintentará en el próximo cambio
+  S._sync = { uid: USER.id, at, dirty: false };
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+}
+async function pull() {
+  if (!USER || !SB) return;
+  const { data, error } = await SB.from('quatri_datos').select('datos, actualizado').eq('user_id', USER.id).maybeSingle();
+  if (error) return;
+  const sy = S._sync || {};
+  if (!data) { if (S.listo) push(); else S._sync = { uid: USER.id, dirty: false }; return; } // primera vez: sube lo que hay aquí
+  if (sy.uid === USER.id) {
+    if (sy.dirty && (!sy.at || data.actualizado <= sy.at)) { push(); return; } // cambios de aquí sin subir
+    if (!sy.at || data.actualizado > sy.at) applyRemote(data);             // hay algo más nuevo en tu cuenta
+    return;
+  }
+  // este dispositivo aún no estaba unido a esta cuenta
+  if (!S.listo) { applyRemote(data); return; }
+  askWhich(data);
+}
+function applyRemote(data) {
+  const keep = {};
+  for (const k of LOCAL_ONLY) if (k !== '_sync' && S[k] !== undefined) keep[k] = S[k];
+  S = { ...(data.datos || {}), ...keep, _sync: { uid: USER.id, at: data.actualizado, dirty: false } };
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+  PLAN_CACHE = {}; colorCache = null; applyTheme();
+  if (S.listo && !STEPS.includes(current())) { if (!['hoy', 'calendario', 'estudio', 'ajustes', 'temario', 'rutinaex'].includes(location.hash.slice(1))) location.hash = 'hoy'; }
+  render();
+}
+// En la cuenta hay datos y en este dispositivo también: que elija la persona
+function askWhich(data) {
+  const r = data.datos || {}, d = new Date(data.actualizado);
+  const g = D?.grados.find(x => x.id === r.grado);
+  const { q, close } = sheet(`
+    <header><h2>¿Con qué datos te quedas?</h2></header>
+    <p style="margin:0">En tu cuenta ya hay un quatri guardado y en este dispositivo también.</p>
+    <ul class="plain">
+      <li><b>En tu cuenta:</b> ${esc(g ? g.n : 'tu grado')} · ${(r.asignaturas || []).length} asignaturas · guardado el ${d.getDate()}/${d.getMonth() + 1} a las ${fmt(d.getHours() * 60 + d.getMinutes())}</li>
+      <li><b>En este dispositivo:</b> ${esc(grado()?.n || '')} · ${(S.asignaturas || []).length} asignaturas</li>
+    </ul>
+    <small class="hint">Los que no elijas se sustituyen.</small>
+    <footer><button type="button" class="btn" id="wLocal">Los de este dispositivo</button><span class="sp"></span><button type="button" class="btn primary" id="wCloud">Los de mi cuenta</button></footer>`);
+  q('#wCloud').onclick = () => { close(); applyRemote(data); toast('Usando los datos de tu cuenta'); };
+  q('#wLocal').onclick = () => { close(); S._sync = { uid: USER.id, dirty: true }; push(); toast('Tu cuenta usa ahora los datos de este dispositivo'); };
+}
+
+// Entrar: Google o código por correo (el código sirve también en la app instalada del iPhone)
+function openLogin() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), app = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const { q, close } = sheet(`
+    <header><h2>Entrar en Quatri</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <p style="margin:0">Guarda tu quatri en tu cuenta y tenlo igual en el móvil y en el ordenador.</p>
+    <button type="button" class="btn gbtn primary-g" id="lG"><span class="g" aria-hidden="true">G</span>Continuar con Google</button>
+    <div class="or"><span>o con tu correo</span></div>
+    <label class="field"><span>Correo</span><input type="email" id="lE" autocomplete="email" inputmode="email" placeholder="tu@correo.com"></label>
+    <button type="button" class="btn" id="lSend">Enviarme un enlace para entrar</button>
+    ${ios && app ? '<small class="hint">En la app del iPhone, el enlace del correo se abre en Safari: entra mejor con Google.</small>' : ''}
+    <div id="lCodeBox" class="stack" hidden>
+      <div class="notice good" id="lInfo"></div>
+      <button type="button" class="link" id="lHave" style="align-self:flex-start">Me ha llegado un código</button>
+      <div id="lCodeIn" class="stack" hidden>
+        <label class="field"><span>Código del correo</span><input id="lC" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456"></label>
+        <button type="button" class="btn primary" id="lOk">Entrar</button>
+      </div>
+    </div>
+    <p class="err" id="lErr" hidden></p>
+    <small class="hint">Al entrar aceptas la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>. Sin anuncios; tus datos solo los ves tú.</small>`);
+  const err = m => { q('#lErr').textContent = m; q('#lErr').hidden = !m; };
+  q('#lG').onclick = async () => {
+    err('');
+    try { const c = await sb(); const { error } = await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: authRedirect() } }); if (error) err('No se ha podido abrir Google. Prueba otra vez.'); }
+    catch { err('Sin conexión. Conéctate a internet para entrar.'); }
+  };
+  q('#lSend').onclick = async () => {
+    const email = q('#lE').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err('Escribe un correo válido.');
+    err(''); q('#lSend').disabled = true; q('#lSend').textContent = 'Enviando…';
+    try {
+      const c = await sb();
+      const { error } = await c.auth.signInWithOtp({ email, options: { emailRedirectTo: authRedirect(), shouldCreateUser: true } });
+      if (error) throw error;
+      q('#lCodeBox').hidden = false; q('#lSend').textContent = 'Reenviar el enlace';
+      q('#lInfo').innerHTML = `Te hemos enviado un enlace a <b>${esc(email)}</b>. Ábrelo <b>en este mismo navegador</b> y entrarás solo. Si no llega en un minuto, mira en spam.`;
+    } catch (e) {
+      q('#lSend').textContent = 'Enviarme un enlace para entrar';
+      err(/rate|limit|seconds/i.test(e?.message || '') ? 'Se han enviado varios correos seguidos. Espera un rato (o entra con Google) y vuelve a probar.' : 'No se ha podido enviar el correo. Revisa tu conexión.');
+    } finally { q('#lSend').disabled = false; }
+  };
+  // si algún día el correo trae también un código (con un servicio de correo propio), se puede escribir aquí
+  q('#lHave').onclick = () => { q('#lCodeIn').hidden = false; q('#lHave').hidden = true; setTimeout(() => q('#lC').focus(), 50); };
+  q('#lOk').onclick = async () => {
+    const email = q('#lE').value.trim(), token = q('#lC').value.replace(/\D/g, '');
+    if (token.length < 6) return err('Escribe el código que te ha llegado.');
+    err('');
+    try {
+      const c = await sb();
+      const { data, error } = await c.auth.verifyOtp({ email, token, type: 'email' });
+      if (error) throw error;
+      USER = data.user; close(); toast('¡Dentro! Tu quatri ya se guarda en tu cuenta');
+      // onAuthStateChange se encarga de traer o subir tus datos
+    } catch { err('El código no es correcto o ha caducado. Pide otro.'); }
+  };
+}
+async function logout() {
+  try { const c = await sb(); await c.auth.signOut(); } catch {}
+  USER = null;
+  // por privacidad, al salir se borran los datos de este dispositivo (en tu cuenta siguen guardados)
+  try { localStorage.removeItem(STORE_KEY); } catch {}
+  S = {}; location.hash = ''; render(); toast('Has cerrado sesión');
+}
+async function borrarCuenta() {
+  try {
+    const c = await sb();
+    const r = await c.rpc('borrar_mi_cuenta');
+    if (r.error) throw r.error;
+    await c.auth.signOut({ scope: 'local' }).catch(() => {});
+  } catch { toast('No se ha podido borrar la cuenta. Revisa tu conexión.'); return; }
+  USER = null;
+  try { localStorage.removeItem(STORE_KEY); } catch {}
+  S = {}; location.hash = ''; render(); toast('Cuenta borrada');
+}
 // Bocadillo de información: se cierra solo a los 4 s o al tocarlo.
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -466,7 +634,7 @@ function viewBienvenida() {
 
     <div class="trust">
       <span><i aria-hidden="true">✓</i>Gratis y sin anuncios</span>
-      <span><i aria-hidden="true">✓</i>Sin cuenta: tus datos se quedan en tu móvil</span>
+      <span><i aria-hidden="true">✓</i>Con tu cuenta de Google o tu correo, lo tienes igual en el móvil y el ordenador</span>
       <span><i aria-hidden="true">✓</i>Horarios oficiales del Visor d'Horaris UPC</span>
     </div>
     <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de la ESEIAAT (Terrassa) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
@@ -474,8 +642,11 @@ function viewBienvenida() {
     actions(`<span class="info">Así funciona Quatri</span><button class="btn primary" id="next">Volver</button>`);
     $('#next').onclick = () => go('ajustes');
   } else {
-    actions(`<span class="info">Unos 2 minutos</span><button class="btn primary" id="next">Empezar</button>`);
+    // quien ya tiene cuenta (por ejemplo, la usa en el móvil y ahora abre el ordenador) entra y recupera todo
+    actions(USER ? `<span class="info">Conectado · ${esc(USER.email)}</span><button class="btn primary" id="next">Empezar</button>`
+      : `<button class="btn" id="login">Ya tengo cuenta</button><span class="info"></span><button class="btn primary" id="next">Empezar</button>`);
     $('#next').onclick = () => go('grado');
+    if ($('#login')) $('#login').onclick = openLogin;
   }
 }
 
@@ -515,11 +686,15 @@ function viewListo() {
       <div class="feat hi"><span class="num ic" aria-hidden="true">+</span><div><b>Añade tu vida</b>
         <p>Con el botón + apuntas entrenos, trabajo o planes. Si les pones trayecto, también lo descontamos de tu tiempo libre.</p></div></div>
     </div>
+    ${USER ? '' : `<section class="card stack" style="margin-top:14px"><b>Guarda tu quatri en tu cuenta</b>
+      <span class="hint" style="margin:0">Así no lo pierdes si cambias de móvil y lo tienes también en el ordenador. Con Google es un toque.</span>
+      <button class="btn" id="lsIn" style="align-self:flex-start">Entrar o crear cuenta</button></section>`}
     ${installed ? '' : `<div class="notice warn" style="margin-top:14px"><b>Tenla a mano como una app.</b> ${ios
       ? 'En Safari, toca Compartir y luego «Añadir a pantalla de inicio».'
       : 'En el menú del navegador, elige «Instalar app» o «Añadir a pantalla de inicio».'}</div>`}`;
   actions(`<span class="info"></span><button class="btn primary" id="next">Ir a mi día</button>`);
   $('#next').onclick = () => { S.dia = dkey(new Date()); save(); go('hoy'); };
+  if ($('#lsIn')) $('#lsIn').onclick = openLogin;
 }
 
 /* ---------- eventos propios ---------- */
@@ -705,26 +880,59 @@ function sheet(html) {
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
   return { q: s => ov.querySelector(s), close };
 }
-function openPlan(ds, s, e, code, tema) {
-  const d = dparse(ds);
+function openPlan(ds, s, e, code, tema, fijoId) {
+  const d = dparse(ds), len = e - s, today = dkey(new Date());
+  // días a los que se puede mover: los de su ventana de 7 días, desde hoy
+  const st = estStartOf(ds) || today;
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(i => dkey(addDays(dparse(st), i))).filter(k => k >= today);
   const { q, close } = sheet(`
     <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
     <p class="hint" style="margin:-6px 0 0">${DAYS[wdOf(d)]} ${d.getDate()} · ${fmt(s % 1440)}–${fmt(e % 1440)}${tema ? ` · ${esc(tema)}` : ''}</p>
-    <p style="margin:0">Es una propuesta de Quatri para llegar bien al examen. Cuando lo hayas hecho, márcalo; si no te va bien a esta hora, sáltalo y lo recolocamos en otro hueco de la semana.</p>
+    <p style="margin:0">${fijoId ? 'Lo moviste tú a esta hora.' : 'Es una propuesta de Quatri para llegar bien al examen.'} Cuando lo hayas hecho, márcalo; si te va mejor otro rato, muévelo.</p>
+    <div id="pMove" class="stack" hidden>
+      <div class="fields">
+        <label class="field"><span>Día</span><select id="pD">${dias.map(k => { const x = dparse(k); return `<option value="${k}" ${k === ds ? 'selected' : ''}>${k === today ? 'Hoy' : DAYS[wdOf(x)]} ${x.getDate()}</option>`; }).join('')}</select></label>
+        <label class="field"><span>Empieza</span><input type="time" id="pI" step="300" value="${fmt(s % 1440)}"></label>
+      </div>
+      <small class="hint">Dura ${dur(len)}. El resto de tu estudio se recoloca alrededor.</small>
+      <p class="err" id="pErr" hidden></p>
+    </div>
     <footer>
-      <button type="button" class="btn" id="pSkip">Saltar y recolocar</button>
+      <button type="button" class="btn" id="pSkip">${fijoId ? 'Quitar' : 'Saltar'}</button>
+      <button type="button" class="btn" id="pMv">Mover</button>
       <span class="sp"></span>
       <button type="button" class="btn primary" id="pDone">Hecho ✓</button>
     </footer>`);
+  const quitarFijo = () => { if (fijoId && S.estFijo) delete S.estFijo[fijoId]; };
   q('#pDone').onclick = () => {
     S.estDone = S.estDone || {};
     S.estDone[newId()] = { ds, s, e, code, t: tema || '' };
+    quitarFijo();
     save(); close(); toast('¡Bien! Cuenta para tu semana'); render();
   };
   q('#pSkip').onclick = () => {
     S.estSkip = S.estSkip || {};
     (S.estSkip[ds] = S.estSkip[ds] || []).push({ s, e });
+    quitarFijo();
     save(); close(); toast('Recolocado en otro hueco'); render();
+  };
+  q('#pMv').onclick = () => {
+    const box = q('#pMove');
+    if (box.hidden) { box.hidden = false; q('#pMv').textContent = 'Guardar aquí'; q('#pMv').classList.add('primary'); return; }
+    const nd = q('#pD').value, ni = q('#pI').value;
+    const err = m => { q('#pErr').textContent = m; q('#pErr').hidden = false; };
+    if (!ni) return err('Elige la hora.');
+    const ns = toMin(ni), ne = ns + len;
+    // no puede pisar clases, comidas, eventos ni otros bloques tuyos
+    const p = dayPlan(nd);
+    const choque = p.blocks.find(b => b.kind !== 'noche' && b.s < ne && ns < b.e);
+    if (choque) return err(`A esa hora tienes ${choque.kind === 'clase' ? 'clase de ' + choque.label : choque.label.toLowerCase()} (${fmt(choque.s % 1440)}–${fmt(choque.e % 1440)}).`);
+    const otro = Object.entries(S.estFijo || {}).find(([id, f]) => id !== fijoId && f.ds === nd && f.s < ne && ns < f.e);
+    if (otro) return err('A esa hora ya tienes otro bloque de estudio que has movido.');
+    if (ne > p.sleep) return err('Acabaría después de tu hora de dormir.');
+    S.estFijo = S.estFijo || {};
+    S.estFijo[fijoId || newId()] = { ds: nd, s: ns, e: ne, code, t: tema || '' };
+    save(); close(); toast('Bloque movido'); render();
   };
 }
 function openDone(id) {
@@ -988,7 +1196,7 @@ function viewHoy() {
     const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : it.kind === 'saltada' ? `No vas · ${esc(it.label)}` : esc(it.label);
     if (it.kind === 'saltada') it = { ...it, sub: `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}` };
     const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"`
-      : it.kind === 'plan' ? `data-plan="${it.s},${it.e},${it.code}" data-tema="${esc(it.tema || '')}"` : it.doneId ? `data-done="${it.doneId}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
+      : it.kind === 'plan' ? `data-plan="${it.s},${it.e},${it.code},${it.fijoId || ''}" data-tema="${esc(it.tema || '')}"` : it.doneId ? `data-done="${it.doneId}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
     return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
       <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
   };
@@ -1033,7 +1241,7 @@ function viewHoy() {
   v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
   v.querySelectorAll('[data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
   v.querySelectorAll('[data-exam]').forEach(el => el.onclick = () => openExamen(el.dataset.code, el.dataset.exam));
-  v.querySelectorAll('[data-plan]').forEach(el => el.onclick = () => { const [s, e, c] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, el.dataset.tema); });
+  v.querySelectorAll('[data-plan]').forEach(el => el.onclick = () => { const [s, e, c, fid] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, el.dataset.tema, fid); });
   v.querySelectorAll('[data-done]').forEach(el => el.onclick = () => openDone(el.dataset.done));
   if ($('#exRutGo')) $('#exRutGo').onclick = () => go('rutinaex');
   v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
@@ -1435,6 +1643,16 @@ function weekSchedule(monKey) {
     const ya = d.p.blocks.filter(b => b.kind === 'estudio').reduce((n, b) => n + b.e - b.s, 0);
     d.cap = Math.max(0, Math.min(estMax(d.ds) * 60 - ya, Math.floor(d.gaps.reduce((n, g) => n + g.e - g.s, 0) * 0.8 / 15) * 15));
   }
+  // bloques que has movido tú a un día y hora: se quedan ahí, ocupan su rato y cuentan para su asignatura
+  for (const [id, f] of Object.entries(S.estFijo || {})) {
+    const d = days.find(x => x.ds === f.ds);
+    if (!d || !subj(f.code)) continue;
+    d.gaps = d.gaps.flatMap(g => g.e <= f.s || g.s >= f.e ? [g] : [{ s: g.s, e: f.s }, { s: f.e, e: g.e }]).filter(g => g.e - g.s >= 30);
+    d.cap = Math.max(0, d.cap - (f.e - f.s));
+    if (pend[f.code] != null) pend[f.code] -= f.e - f.s;
+    (d.fixed = d.fixed || []).push({ s: f.s, e: f.e, code: f.code, kind: 'plan', label: `Estudio · ${subj(f.code).n}`,
+      sub: f.t ? `${f.t} · movido por ti` : 'Movido por ti', tema: f.t || '', ds: f.ds, fijoId: id });
+  }
   // si el examen de una asignatura cae esta semana, sus horas solo caben en los días de antes
   const okDay = (c, ds) => !lim[c] || ds < lim[c];
   for (const c of Object.keys(pend)) if (!days.some(d => okDay(c, d.ds))) delete pend[c]; // su examen ya ha pasado
@@ -1461,7 +1679,7 @@ function weekSchedule(monKey) {
         t += len + 15; // pausa entre bloques
       }
     }
-    out[d.ds] = blocks;
+    out[d.ds] = [...(d.fixed || []), ...blocks].sort((x, y) => x.s - y.s);
   }
   out._sinHueco = Math.max(0, Object.values(pend).reduce((a, b) => a + Math.max(0, b), 0));
   return (PLAN_CACHE[key] = out);
@@ -1971,6 +2189,15 @@ function viewAjustes() {
     <div class="eyebrow">Ajustes</div>
     <h1>Tu Quatri</h1>
     <p class="lead">${esc(g.n)} · ${S.asignaturas.length} asignaturas · ${esc(D.periodo.curso)} ${esc(D.periodo.q)}</p>
+    <section class="card stack cuenta" style="margin-bottom:12px">
+      <div class="eyebrow">Cuenta</div>
+      ${USER ? `
+        <div><b>${esc(USER.user_metadata?.full_name || USER.email)}</b><br><small class="hint">${esc(USER.email)} · ${S._sync?.dirty ? 'guardando cambios…' : 'todo guardado en tu cuenta'}</small></div>
+        <div class="row"><button class="btn small" id="aOut">Cerrar sesión</button><button class="btn small danger" id="aDel">Borrar mi cuenta</button></div>
+        <div class="confirm" id="aConf" hidden></div>`
+      : `<p style="margin:0">Ahora tus datos solo están en este dispositivo. Entra para guardarlos y tener lo mismo en el móvil y en el ordenador.</p>
+        <button class="btn primary" id="aIn">Entrar o crear cuenta</button>`}
+    </section>
     <section class="card stack" style="margin-bottom:12px">
       <div class="eyebrow">Apariencia</div>
       <div class="seg2" role="group" aria-label="Modo de color" style="margin:0">
@@ -1989,8 +2216,19 @@ function viewAjustes() {
       <button class="choice" data-go="grado"><span><b>Cambiar de grado</b><span class="code">Empieza de nuevo con otro grado</span></span></button>
       <button class="choice" data-go="bienvenida"><span><b>Cómo funciona Quatri</b><span class="code">Vuelve a ver la presentación</span></span></button>
     </div>
-    <p class="hint" style="margin-top:18px">Tus datos se guardan solo en este dispositivo. Horarios: Visor d'Horaris UPC · Créditos y horas: guías docentes UPC.</p>`;
+    <p class="hint" style="margin-top:18px">Horarios: Visor d'Horaris UPC · Créditos, temario y evaluación: guías docentes UPC · <a href="privacidad.html" target="_blank" rel="noopener">Privacidad</a></p>`;
   v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  if ($('#aIn')) $('#aIn').onclick = openLogin;
+  if ($('#aOut')) $('#aOut').onclick = () => {
+    const c = $('#aConf'); c.hidden = false;
+    c.innerHTML = `<span>Se borrarán los datos de este dispositivo. En tu cuenta siguen guardados y vuelven al entrar.</span><div class="row"><button class="btn" id="oY">Cerrar sesión</button><button class="btn" id="oN">Cancelar</button></div>`;
+    $('#oN').onclick = () => { c.hidden = true; }; $('#oY').onclick = logout;
+  };
+  if ($('#aDel')) $('#aDel').onclick = () => {
+    const c = $('#aConf'); c.hidden = false;
+    c.innerHTML = `<span><b>Se borrará tu cuenta y todo lo que tienes guardado, para siempre.</b> No se puede deshacer.</span><div class="row"><button class="btn danger" id="dY">Sí, borrar mi cuenta</button><button class="btn" id="dN">Cancelar</button></div>`;
+    $('#dN').onclick = () => { c.hidden = true; }; $('#dY').onclick = borrarCuenta;
+  };
   v.querySelectorAll('[data-tema]').forEach(b => b.onclick = () => { S.tema = b.dataset.tema; save(); applyTheme(); viewAjustes(); });
   tabs('ajustes');
 }
@@ -2011,6 +2249,7 @@ async function start() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   window.addEventListener('hashchange', render);
   render();
+  initCuenta();
   // el temario hace falta para poner el tema en cada bloque de estudio; cuando llega, se repinta
   if (S.listo) loadTemarios().then(() => { PLAN_CACHE = {}; if (['hoy', 'calendario'].includes(current())) { const y = window.scrollY; render(); window.scrollTo(0, y); } });
 }
