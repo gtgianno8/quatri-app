@@ -127,6 +127,8 @@ function actions(html) {
   if (!bar) { bar = document.createElement('div'); bar.id = 'actions'; bar.className = 'actions'; document.body.appendChild(bar); }
   bar.innerHTML = `<div class="actions-in">${html}</div>`;
   bar.hidden = !html;
+  // en pantallas grandes, las pestañas pasan a un menú lateral
+  document.body.classList.toggle('has-side', html.includes('class="tabs"'));
 }
 
 /* ---------- 1. Grado ---------- */
@@ -425,6 +427,7 @@ function viewBienvenida() {
   ];
   const v = $('#view');
   v.innerHTML = `
+    <div class="welcome-top">
     <section class="hero">
       <div class="eyebrow">Para estudiantes de la UPC · ESEIAAT</div>
       <h1 class="hero-t">Tu quatri,<br>bajo control<span class="dot">.</span></h1>
@@ -436,6 +439,7 @@ function viewBienvenida() {
       <ul class="timeline">${demo.map(([a, b, k, t, s, col]) => `
         <li class="it ${k}" style="${col ? `--c:${col[1]};--cb:${col[0]}` : k === 'evento' ? '--ev:#E8590C' : ''}"><span class="t">${a}<br><small>${b}</small></span>
         <span class="n"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span></li>`).join('')}</ul>
+    </div>
     </div>
 
     <h2 class="sec">Qué hace por ti</h2>
@@ -997,6 +1001,8 @@ function viewHoy() {
         ${ds !== today ? '<button class="todaybtn" id="today">Volver a hoy</button>' : ''}</div>
       <button class="icon" id="next" aria-label="Día siguiente">›</button>
     </div>
+    <div class="hoy-grid">
+    <aside class="hoy-side">
     <div class="stats">
       <div class="stat free"><b>${dur(p.freeMin)}</b><span>libres de verdad</span></div>
       <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
@@ -1005,7 +1011,20 @@ function viewHoy() {
     ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
     ${p.exRut ? `<button class="notice exrut" id="exRutGo" style="margin-top:8px">Rutina de exámenes activa · <span>cambiarla ›</span></button>` : ''}
     ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
-    <ul class="timeline">${items.map(row).join('')}</ul>`;
+    ${(() => {
+      // solo en pantallas grandes: los próximos exámenes, para aprovechar el espacio de la columna
+      const ex = (S.asignaturas || []).flatMap(c => examsOf(c).filter(e => e[1] >= today).map(e => ({ c, e })))
+        .sort((x, y) => x.e[1].localeCompare(y.e[1])).slice(0, 5);
+      if (!ex.length) return '';
+      return `<section class="card desk-only next-ex"><div class="eyebrow">Próximos exámenes</div>
+        ${ex.map(({ c, e }) => { const dd = dparse(e[1]), n = Math.round((dd - dparse(today)) / 864e5); return `<div class="nx" style="${colorVars(c)}"><i></i>
+          <span><b>${esc(exName(e))} · ${esc(subj(c).s)}</b><small>${esc(subj(c).n)}</small></span>
+          <span class="nx-d">${DAYS_SHORT[wdOf(dd)]} ${dd.getDate()}/${dd.getMonth() + 1}<small>${n === 0 ? 'hoy' : n === 1 ? 'mañana' : `en ${n} días`}</small></span></div>`; }).join('')}
+      </section>`;
+    })()}
+    </aside>
+    <div class="hoy-main"><ul class="timeline">${items.map(row).join('')}</ul></div>
+    </div>`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
   $('#prev').onclick = () => slideTo(v, -1, shift);
   $('#next').onclick = () => slideTo(v, 1, shift);
@@ -1101,7 +1120,7 @@ function swipe(el, fn) {
 /* ---------- pestañas ---------- */
 function tabs(active) {
   const t = [['hoy', 'Hoy', '◷'], ['calendario', 'Calendario', '▦'], ['estudio', 'Estudio', '✎'], ['ajustes', 'Ajustes', '⚙']];
-  actions(`<nav class="tabs">${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
+  actions(`<nav class="tabs"><div class="side-brand"><span>quatri<span class="dot">.</span></span><span class="beta">${esc($('.brand .beta')?.textContent || '')}</span></div>${t.map(([id, label, ic]) => `<button data-tab="${id}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`).join('')}</nav>`);
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     // tocar la pestaña en la que ya estás te devuelve a hoy / esta semana
     if (b.dataset.tab === active && active === 'hoy') { S.dia = dkey(new Date()); save(); viewHoy(); return; }
@@ -1508,7 +1527,7 @@ function viewEstudio() {
         ${W.enEx ? ' Época de exámenes: las horas salen de lo que te queda de temario.' : ''}</p>
       ${aviso}
     </section>
-    <div class="stack" style="margin-top:12px">
+    <div class="est-grid">
       ${si.map(r => `
         <div class="card subjplan" style="${colorVars(r.c)}">
           <div class="sp-head">

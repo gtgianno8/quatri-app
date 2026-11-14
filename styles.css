@@ -252,6 +252,51 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .finalmodo{margin-top:8px}
 .xtemas{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
 .xtemas .check{font-size:14px}
+/* ---------- ordenador y pantallas grandes ---------- */
+.side-brand,.desk-only{display:none}
+.est-grid{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.next-ex{flex-direction:column;gap:10px;margin-top:12px}
+.nx{display:flex;align-items:center;gap:10px;font-size:13.5px}
+.nx i{width:4px;align-self:stretch;border-radius:2px;background:var(--c);flex:none}
+.nx span:nth-of-type(1){flex:1;min-width:0}
+.nx b{display:block;font-weight:700}
+.nx small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nx-d{font-family:var(--mono);font-size:12.5px;text-align:right;white-space:nowrap}
+@media (min-width:1024px){
+  .desk-only{display:flex}
+  /* menú lateral en vez de la barra de abajo */
+  body.has-side{padding-left:232px}
+  body.has-side .top{display:none}
+  body.has-side #actions{top:0;bottom:0;left:0;right:auto;width:232px;border-top:0;border-right:1px solid var(--line);padding:22px 14px}
+  body.has-side .actions-in{max-width:none;height:100%;align-items:stretch}
+  body.has-side .tabs{display:flex;flex-direction:column;gap:4px}
+  body.has-side .side-brand{display:flex;align-items:baseline;gap:8px;padding:0 10px 22px;font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--fg)}
+  body.has-side .side-brand .dot{color:var(--hi)}
+  body.has-side .tabs button{flex-direction:row;justify-content:flex-start;gap:12px;padding:11px 12px;font-size:15px}
+  body.has-side .tabs button span{width:22px;text-align:center}
+  body.has-side .view{max-width:1240px;padding:32px 40px 64px}
+  body.has-side .fab{bottom:32px;right:36px}
+  body.has-side .toast{bottom:32px;left:calc(50% + 116px)}
+  /* Hoy: el día a la izquierda, las cifras y los exámenes en una columna a la derecha */
+  .hoy-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:28px;align-items:start;margin-top:8px}
+  .hoy-side{order:2;position:sticky;top:24px;display:flex;flex-direction:column}
+  .hoy-side .stats{grid-template-columns:1fr 1fr}
+  .hoy-side .stat.free{grid-column:1/-1}
+  .hoy-main .timeline{margin-top:0}
+  /* Estudio: asignaturas en dos columnas */
+  .est-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  #adv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+  #adv[hidden]{display:none}
+  #adv>section:last-child{grid-column:1/-1}
+  /* bienvenida: titular y ejemplo lado a lado */
+  .welcome-top{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:center;margin-bottom:12px}
+  .view:has(.welcome-top){max-width:1180px}
+  .top-in,.actions-in{max-width:1180px}
+  .view{max-width:1180px}
+  .feats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (min-width:1400px){ .est-grid{grid-template-columns:repeat(3,minmax(0,1fr))} }
+
 /* estudio simplificado */
 .est-sum{display:flex;flex-direction:column;gap:6px}
 .est-big{display:flex;align-items:baseline;gap:8px}
