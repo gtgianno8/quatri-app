@@ -194,7 +194,7 @@ function openLogin() {
    un proceso en Supabase los envía a su hora a los dispositivos guardados en quatri_push.
    S.avisos = { on, clase: minutos antes (0 = no), estudio, examen, resumen: 'HH:MM' | '' } */
 const VAPID_PUBLIC = 'BBGa8KHym0LVQk8PAyzxAMznuL22QSXvSjRWkTuZ-4u7LZFq6_9utkeYE7qC3ikDyIq68xd7Ubys7HuJL6gmmRQ';
-const AVISOS_DEF = { on: false, clase: 10, estudio: true, examen: true, resumen: '08:00' };
+const AVISOS_DEF = { on: false, clase: 10, estudio: true, examen: true, examenHora: '20:00', resumen: '08:00' };
 const avisosCfg = () => ({ ...AVISOS_DEF, ...(S.avisos || {}) });
 const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
@@ -246,7 +246,7 @@ function listaAvisos() {
       const dias = Math.round((dparse(e[1]) - dparse(hoy)) / 864e5);
       if (dias < 1 || dias > 21) continue;
       const nom = `${exName(e)} de ${subj(c).n}`;
-      for (const antes of [7, 3, 1]) if (dias >= antes) add(at(dkey(addDays(dparse(e[1]), -antes)), 20 * 60),
+      for (const antes of [7, 3, 1]) if (dias >= antes) add(at(dkey(addDays(dparse(e[1]), -antes)), toMin(A.examenHora || '20:00')),
         antes === 1 ? `Mañana: ${nom}` : `En ${antes} días: ${nom}`, `${e[2] ? `${e[2]}–${e[3]}` : 'Sin hora'}${e[4] ? ' · ' + e[4] : ''}`);
     }
   }
@@ -2348,7 +2348,10 @@ function viewAjustes() {
               <label class="field"><span>Resumen del día</span>${sel('avR', [['', 'No'], ['07:00', 'A las 7:00'], ['07:30', 'A las 7:30'], ['08:00', 'A las 8:00'], ['08:30', 'A las 8:30'], ['09:00', 'A las 9:00']], A.resumen)}</label>
             </div>
             <label class="check"><input type="checkbox" id="avE" ${A.estudio ? 'checked' : ''}> Cuando empieza un bloque de estudio</label>
-            <label class="check"><input type="checkbox" id="avX" ${A.examen ? 'checked' : ''}> Exámenes y controles (7, 3 y 1 día antes, a las 20:00)</label>
+            <label class="check"><input type="checkbox" id="avX" ${A.examen ? 'checked' : ''}> Exámenes y controles (7, 3 y 1 día antes)</label>
+            <div class="fields" id="avXBox" ${A.examen ? '' : 'hidden'}>
+              <label class="field"><span>Avisos de exámenes a las</span>${sel('avXH', [['09:00', '9:00 (mañana)'], ['14:00', '14:00 (mediodía)'], ['18:00', '18:00 (tarde)'], ['20:00', '20:00 (noche)'], ['21:00', '21:00 (noche)']], A.examenHora)}</label>
+            </div>
             <button class="btn small" id="avTest" style="align-self:flex-start">Enviarme un aviso de prueba</button>
           </div>`}
       </section>`;
@@ -2387,10 +2390,11 @@ function viewAjustes() {
     if ($('#avOff')) $('#avOff').onclick = async () => { await desactivarAvisos(); toast('Avisos desactivados'); viewAjustes(); };
   })();
   const avSave = () => {
-    S.avisos = { ...avisosCfg(), clase: Number($('#avC').value), resumen: $('#avR').value, estudio: $('#avE').checked, examen: $('#avX').checked };
+    S.avisos = { ...avisosCfg(), clase: Number($('#avC').value), resumen: $('#avR').value, estudio: $('#avE').checked, examen: $('#avX').checked, examenHora: $('#avXH').value };
+    $('#avXBox').hidden = !S.avisos.examen;
     save(); programarAvisos(true); toast('Guardado');
   };
-  ['#avC', '#avR', '#avE', '#avX'].forEach(id => { if ($(id)) $(id).onchange = avSave; });
+  ['#avC', '#avR', '#avE', '#avX', '#avXH'].forEach(id => { if ($(id)) $(id).onchange = avSave; });
   if ($('#avTest')) $('#avTest').onclick = avisoPrueba;
   if ($('#aOut')) $('#aOut').onclick = () => {
     const c = $('#aConf'); c.hidden = false;
