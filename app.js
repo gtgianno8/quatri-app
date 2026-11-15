@@ -26,11 +26,22 @@ function load() {
 }
 function save() {
   PLAN_CACHE = {}; // cualquier cambio puede mover el estudio colocado en la semana
+  // El estudio se recoloca desde el día en que cambiaste algo de verdad (no por pasar de día):
+  // así el plan que ves y los avisos que ya están programados en el servidor coinciden.
+  const sig = planSig();
+  if (sig !== S._planSig) { S._planSig = sig; S.planDesde = dkey(new Date()); }
   if (USER) S._sync = { ...(S._sync || {}), uid: USER.id, dirty: true };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { toast('No se ha podido guardar en este dispositivo.'); }
   if (USER) { clearTimeout(SYNC_T); SYNC_T = setTimeout(push, 1500); } // sube los cambios a tu cuenta
 }
 let PLAN_CACHE = {};
+// huella de todo lo que puede mover el estudio (sin lo que solo es de pantalla o de avisos)
+function planSig() {
+  const skip = ['planDesde', '_planSig', 'avisos'];
+  const str = JSON.stringify(Object.entries(forCloud()).filter(([k]) => !skip.includes(k)));
+  let h = 5381; for (let i = 0; i < str.length; i++) h = (h * 33 + str.charCodeAt(i)) | 0;
+  return h;
+}
 
 /* ---------- cuenta y sincronización (Supabase) ----------
    Sin cuenta, todo vive en este dispositivo. Con cuenta, el estado se guarda también en la tabla
@@ -1002,8 +1013,9 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     </div>
     <footer>
       <button type="button" class="btn" id="pSkip">${fijoId ? 'Quitar' : 'Saltar'}</button>
-      <button type="button" class="btn" id="pMv">Mover</button>
+      <button type="button" class="btn" id="pCancel" hidden>Cancelar</button>
       <span class="sp"></span>
+      <button type="button" class="btn" id="pMv">Mover</button>
       <button type="button" class="btn primary" id="pDone">Hecho ✓</button>
     </footer>`);
   const quitarFijo = () => { if (fijoId && S.estFijo) delete S.estFijo[fijoId]; };
@@ -1013,6 +1025,10 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     quitarFijo();
     save(); close(); toast('¡Bien! Cuenta para tu semana'); render();
   };
+  q('#pCancel').onclick = () => {
+    q('#pMove').hidden = true; q('#pErr').hidden = true; q('#pMv').textContent = 'Mover'; q('#pMv').classList.remove('primary');
+    q('#pDone').hidden = q('#pSkip').hidden = false; q('#pCancel').hidden = true;
+  };
   q('#pSkip').onclick = () => {
     S.estSkip = S.estSkip || {};
     (S.estSkip[ds] = S.estSkip[ds] || []).push({ s, e });
@@ -1021,7 +1037,11 @@ function openPlan(ds, s, e, code, tema, fijoId) {
   };
   q('#pMv').onclick = () => {
     const box = q('#pMove');
-    if (box.hidden) { box.hidden = false; q('#pMv').textContent = 'Guardar aquí'; q('#pMv').classList.add('primary'); return; }
+    // al mover, solo quedan "Cancelar" y "Guardar aquí" (sin "Hecho", para no confundirlos)
+    if (box.hidden) {
+      box.hidden = false; q('#pMv').textContent = 'Guardar aquí'; q('#pMv').classList.add('primary');
+      q('#pDone').hidden = q('#pSkip').hidden = true; q('#pCancel').hidden = false; return;
+    }
     const nd = q('#pD').value, ni = q('#pI').value;
     const err = m => { q('#pErr').textContent = m; q('#pErr').hidden = false; };
     if (!ni) return err('Elige la hora.');
@@ -1728,7 +1748,8 @@ const hfmt = h => num(Math.round(h * 2) / 2) + ' h';
    bloques de 30 min a 1 h 30, con 15 min de pausa entre bloques, un tope por día y alternando asignaturas.
    Los bloques son una propuesta: puedes marcarlos como hechos (S.estDone) o saltarlos (S.estSkip) y se recolocan. */
 function weekSchedule(monKey) {
-  const todayK = dkey(new Date()), key = monKey + '|' + todayK;
+  // se coloca desde el último día en que cambiaste algo (o desde hoy); los días de antes de hoy ya no se ven
+  const hoyK = dkey(new Date()), todayK = S.planDesde && S.planDesde < hoyK ? S.planDesde : hoyK, key = monKey + '|' + todayK;
   if (PLAN_CACHE[key]) return PLAN_CACHE[key];
   const W = weekPlan(monKey), mon = dparse(monKey);
   const pend = {}, tq = {}, lim = {};
