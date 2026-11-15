@@ -344,7 +344,7 @@ async function probarUsuarios(n = 20, seed = 7) {
           if (ex.length && ex.some(e => e[1] === ds)) err(`${ds}: estudio de ${subj(b.code).s} el día de su examen`);
           if (visorConExamenes() && !nextExam(b.code, ds) && !(S.estudio?.nivel || {})[b.code]) err(`${ds}: estudio de ${subj(b.code).s}, que no tiene examen por delante`);
         }
-        const yaHecho = p.blocks.filter(b => b.kind === 'estudio').reduce((m, b) => m + b.e - b.s, 0);
+        const yaHecho = p.blocks.filter(b => b.kind === 'estudio' && b.doneId).reduce((m, b) => m + b.e - b.s, 0);
         const planMin = plan.reduce((m, b) => m + b.e - b.s, 0);
         if (planMin + yaHecho > estMax(ds) * 60 + 1 && plan.length) err(`${ds}: ${planMin} min de estudio con máximo ${estMax(ds)} h`);
         if (p.fuera && plan.some(b => !b.fijoId)) err(`${ds}: estudio un día que está fuera`);
@@ -1912,9 +1912,10 @@ function weekPlan(monKey) {
   const mon = dparse(monKey);
   const days = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
   const freeMin = days.reduce((n, p) => n + p.freeMin, 0);
-  // estudio que ya tienes puesto en vez de ir a clase: cuenta como horas de estudio de esa asignatura
+  // estudio ya hecho (marcado): cuenta como horas de estudio de esa asignatura.
+  // El que haces en la hora de una clase a la que no vas NO cuenta: sustituye a la clase, no al estudio de después.
   const hecho = {};
-  for (const p of days) for (const b of p.blocks) if (b.kind === 'estudio') hecho[b.code] = (hecho[b.code] || 0) + (b.e - b.s) / 60;
+  for (const p of days) for (const b of p.blocks) if (b.kind === 'estudio' && b.doneId) hecho[b.code] = (hecho[b.code] || 0) + (b.e - b.s) / 60;
   const estMin = Object.values(hecho).reduce((n, h) => n + h * 60, 0);
   const enEx = days.some(p => p.exRut);
   const codes = (S.asignaturas || []).slice();
@@ -1928,7 +1929,7 @@ function weekPlan(monKey) {
     return { c, a, lv, oficial, ex, daysTo, need: null, w: oficial * urg };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
-  // ese estudio sale de horas que no eran libres (eran de clase), así que se suma al tiempo disponible
+  // lo ya hecho ocupó huecos libres, así que se suma al tiempo disponible
   let sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.4), Math.round(oficialTotal * ritmo())));
   if (enEx) {
     const need = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + (r.need ?? r.oficial * ritmo()), 0);
@@ -1947,7 +1948,7 @@ function weekPlan(monKey) {
     if (r.lv === 'no') r.horas = 0;
     else if (E.ajuste[r.c] != null) { r.horas = E.ajuste[r.c]; r.manual = true; }
     else r.horas = wsum ? Math.round(rest * r.w / wsum * 2) / 2 : 0;
-    // nunca menos de lo que ya estudias en vez de clase; lo que falta es lo que queda por colocar en tus huecos
+    // nunca menos de lo que ya has hecho; lo que falta es lo que queda por colocar en tus huecos
     r.hecho = Math.round((hecho[r.c] || 0) * 2) / 2;
     if (r.horas < r.hecho) r.horas = r.hecho;
     r.pend = Math.max(0, r.horas - r.hecho);
@@ -1982,8 +1983,8 @@ function weekSchedule(monKey) {
     let gaps = d.p.free.map(f => ({ s: f.s + (d.p.blocks.some(b => b.viaje === 'vuelta' && b.e === f.s) ? 30 : d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
     for (const k of skips[d.ds] || []) gaps = gaps.flatMap(g => g.e <= k.s || g.s >= k.e ? [g] : [{ s: g.s, e: k.s }, { s: k.e, e: g.e }]);
     d.gaps = gaps.filter(g => g.e - g.s >= 30);
-    // el tope del día descuenta el estudio que ya tiene (hecho o en vez de una clase)
-    const ya = d.p.blocks.filter(b => b.kind === 'estudio').reduce((n, b) => n + b.e - b.s, 0);
+    // el tope del día descuenta el estudio ya hecho (no el que haces en vez de una clase)
+    const ya = d.p.blocks.filter(b => b.kind === 'estudio' && b.doneId).reduce((n, b) => n + b.e - b.s, 0);
     d.cap = Math.max(0, Math.min(estMax(d.ds) * 60 - ya, Math.floor(d.gaps.reduce((n, g) => n + g.e - g.s, 0) * 0.8 / 15) * 15));
   }
   // bloques que has movido tú a un día y hora: se quedan ahí, ocupan su rato y cuentan para su asignatura
@@ -2085,7 +2086,8 @@ function viewEstudio() {
   // cada día: lo hecho (o estudiado en vez de clase) y lo propuesto
   const dias = [0, 1, 2, 3, 4, 5, 6].map(i => {
     const ds = dkey(addDays(a, i)), p = dayView(ds);
-    const its = p.blocks.filter(x => (x.kind === 'estudio' || x.kind === 'plan') && subj(x.code));
+    // estudio fuera de clase: lo hecho y lo propuesto (el de una clase a la que no vas va en Hoy, como la clase)
+    const its = p.blocks.filter(x => ((x.kind === 'estudio' && x.doneId) || x.kind === 'plan') && subj(x.code));
     return { ds, its };
   }).filter(d => d.its.length);
   const mins = x => x.e - x.s;
@@ -2099,7 +2101,7 @@ function viewEstudio() {
     return `<div class="erow${ok ? ' ok' : ''}${past && !ok ? ' past' : ''}" style="${colorVars(x.code)}">
       ${ok ? '<span class="eck on" aria-label="Hecho">✓</span>'
         : `<button class="eck" data-ck="${ds},${x.s},${x.e},${x.code},${x.fijoId || ''}" aria-label="Marcar como hecho"></button>`}
-      <button class="emain" ${data}><span class="dot"></span><span class="asn"><b>${esc(subj(x.code).n)}</b><small>${fmt(x.s % 1440)} · ${dur(mins(x))}${ok && !x.doneId ? ' · en vez de clase' : ''}</small></span></button>
+      <button class="emain" ${data}><span class="dot"></span><span class="asn"><b>${esc(subj(x.code).n)}</b><small>${fmt(x.s % 1440)} · ${dur(mins(x))}</small></span></button>
     </div>`;
   };
   const X = W.enEx ? rutinaEx() : null, maxS = X ? X.maxSemana : (S.estMax?.semana ?? 2);
