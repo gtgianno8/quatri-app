@@ -306,10 +306,16 @@ async function borrarCuenta() {
   S = {}; location.hash = ''; render(); toast('Cuenta borrada');
 }
 // Bocadillo de información: se cierra solo a los 4 s o al tocarlo.
-function toast(msg) {
+// undo: si se pasa, el aviso lleva un botón "Deshacer" y dura más
+function toast(msg, undo) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   if (!t.dataset.tap) { t.dataset.tap = 1; t.onclick = () => { t.hidden = true; clearTimeout(toast.t); }; }
-  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 4000);
+  if (undo) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-undo'; b.textContent = 'Deshacer';
+    b.onclick = e => { e.stopPropagation(); t.hidden = true; clearTimeout(toast.t); undo(); };
+    t.append(' ', b);
+  }
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, undo ? 8000 : 4000);
 }
 
 /* ---------- catálogo ---------- */
@@ -813,12 +819,17 @@ function viewListo() {
 
 /* ---------- eventos propios ---------- */
 const EV_TYPES = [['entreno', 'Entreno', '#E8590C'], ['trabajo', 'Trabajo', '#5F3DC4'], ['partido', 'Partido', '#C2255C'],
-  ['plan', 'Plan', '#1971C2'], ['estudio', 'Estudio', '#0B7285'], ['otro', 'Otro', '#495057']];
+  ['plan', 'Plan', '#1971C2'], ['viaje', 'Viaje', '#2B8A3E'], ['estudio', 'Estudio', '#0B7285'], ['otro', 'Otro', '#495057']];
 const EV_NAME = Object.fromEntries(EV_TYPES.map(t => [t[0], t[1]]));
-const evColor = tipo => (EV_TYPES.find(t => t[0] === tipo) || EV_TYPES[5])[2];
+const evColor = tipo => (EV_TYPES.find(t => t[0] === tipo) || EV_TYPES.find(t => t[0] === 'otro'))[2];
 function eventsOn(ds) {
   const out = [], wd = (dparse(ds).getDay() + 6) % 7;
   for (const [id, ev] of Object.entries(S.eventos || {})) {
+    // un viaje va de un día y hora a otro día y hora: los días de en medio quedan enteros
+    if (ev.tipo === 'viaje' && ev.fechaFin) {
+      if (ds >= ev.fecha && ds <= ev.fechaFin) out.push({ id, ev, s: ds === ev.fecha ? toMin(ev.ini) : 0, e: ds === ev.fechaFin ? toMin(ev.fin) : 1440 });
+      continue;
+    }
     let hit;
     if (ev.repite) hit = ds >= ev.fecha && (!ev.repite.hasta || ds <= ev.repite.hasta) && ev.repite.dias.includes(wd) && !(ev.excepciones || []).includes(ds);
     else hit = ev.fecha === ds;
@@ -839,9 +850,18 @@ function openEvent(id, ds, sMin, eMin) {
       <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
       <label class="field"><span>Qué es</span><input id="evT" maxlength="60" placeholder="Ej.: Entreno en pista" value="${esc(ev?.titulo || '')}" autocomplete="off"></label>
       <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
+      <div id="evViaje" class="stack" hidden>
+        <div class="fields">
+          <label class="field"><span>Te vas el</span><input type="date" id="evVD" value="${ev?.fecha || ds}"></label>
+          <label class="field"><span>a las</span><input type="time" id="evVI" step="300" value="${ev?.tipo === 'viaje' && ev.ini ? ev.ini : '16:00'}"></label>
+          <label class="field"><span>Vuelves el</span><input type="date" id="evVF" value="${ev?.fechaFin || dkey(addDays(dparse(ds), 2))}"></label>
+          <label class="field"><span>a las</span><input type="time" id="evVH" step="300" value="${ev?.tipo === 'viaje' && ev.fin ? ev.fin : '18:00'}"></label>
+        </div>
+        <small class="hint">Mientras estás fuera no te proponemos estudio: las horas de esa semana se recolocan en los otros días.</small>
+      </div>
+      <div id="evNormal" class="stack">
       <label class="field"><span>Día</span><input type="date" id="evD" value="${ev?.fecha || ds}"></label>
       <label class="check"><input type="checkbox" id="evAll" ${ev?.todoDia ? 'checked' : ''}> Todo el día</label>
-      <label class="check" id="evOcBox" ${ev?.todoDia ? '' : 'hidden'}><input type="checkbox" id="evOc" ${ev?.ocupa === false ? '' : 'checked'}> Estoy fuera / ocupado todo el día<small class="hint" style="display:block">Ese día no te propondremos estudio ni contará como tiempo libre. Desmárcalo para recordatorios (un cumpleaños, por ejemplo).</small></label>
       <div class="fields" id="evTimes" ${ev?.todoDia ? 'hidden' : ''}>
         <label class="field"><span>Empieza</span><input type="time" id="evI" step="300" value="${ev?.ini || fmt(s0)}"></label>
         <label class="field"><span>Acaba</span><input type="time" id="evF" step="300" value="${ev?.fin || fmt(e0 % 1440)}"></label>
@@ -851,6 +871,7 @@ function openEvent(id, ds, sMin, eMin) {
       <div id="evRepBox" class="stack" ${ev?.repite ? '' : 'hidden'}>
         <div class="evdays">${DAYS_SHORT.map((d, i) => `<button type="button" data-d="${i}" aria-pressed="${F.dias.has(i)}">${d}</button>`).join('')}</div>
         <label class="field"><span>Hasta (opcional)</span><input type="date" id="evH" value="${ev?.repite?.hasta || ''}"></label>
+      </div>
       </div>
       <label class="field"><span>Lugar (opcional)</span><input id="evL" maxlength="60" value="${esc(ev?.lugar || '')}" autocomplete="off"></label>
       <p class="err" id="evErr" hidden></p>
@@ -868,9 +889,15 @@ function openEvent(id, ds, sMin, eMin) {
   const close = () => { ov.remove(); document.body.style.overflow = ''; };
   ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-  ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
+  // el viaje tiene salida y vuelta (puede durar varios días); el resto, día y horas
+  const modo = () => { const v = F.tipo === 'viaje'; q('#evViaje').hidden = !v; q('#evNormal').hidden = v; };
+  ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); modo(); });
+  modo();
   ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const i = +b.dataset.d; F.dias.has(i) ? F.dias.delete(i) : F.dias.add(i); b.setAttribute('aria-pressed', String(F.dias.has(i))); });
-  q('#evAll').onchange = () => { q('#evTimes').hidden = q('#evAll').checked; q('#evOcBox').hidden = !q('#evAll').checked; };
+  q('#evAll').onchange = () => { q('#evTimes').hidden = q('#evAll').checked; };
+  // para poder deshacer: cómo estaban tus eventos antes de este cambio
+  const antes = JSON.stringify(S.eventos || {});
+  const deshacer = () => { S.eventos = JSON.parse(antes); save(); render(); toast('Deshecho'); };
   q('#evRep').onchange = () => {
     q('#evRepBox').hidden = !q('#evRep').checked;
     if (q('#evRep').checked && !F.dias.size && q('#evD').value) { const i = wdOf(dparse(q('#evD').value)); F.dias.add(i); q(`[data-d="${i}"]`).setAttribute('aria-pressed', 'true'); }
@@ -878,13 +905,22 @@ function openEvent(id, ds, sMin, eMin) {
   const err = m => { q('#evErr').textContent = m; q('#evErr').hidden = false; };
   q('form').onsubmit = e => {
     e.preventDefault();
+    if (F.tipo === 'viaje') {
+      const titulo = q('#evT').value.trim() || 'Viaje', a = q('#evVD').value, ai = q('#evVI').value, b = q('#evVF').value, bi = q('#evVH').value;
+      if (!a || !b || !ai || !bi) return err('Indica cuándo te vas y cuándo vuelves.');
+      if (b + bi <= a + ai) return err('La vuelta tiene que ser después de la salida.');
+      S.eventos = S.eventos || {};
+      S.eventos[id || newId()] = { titulo, tipo: 'viaje', fecha: a, ini: ai, fechaFin: b, fin: bi, todoDia: false, trayecto: 0, lugar: q('#evL').value.trim(), repite: null, excepciones: [] };
+      save(); close(); toast(id ? 'Viaje actualizado' : 'Viaje guardado', id ? deshacer : null); render();
+      return;
+    }
     const titulo = q('#evT').value.trim(), fecha = q('#evD').value, todoDia = q('#evAll').checked;
     const ini = q('#evI').value, fin = q('#evF').value;
     if (!titulo) return err('Ponle un nombre, por ejemplo "Entreno" o "Trabajo".');
     if (!fecha) return err('Elige el día.');
     if (!todoDia && (!ini || !fin)) return err('Indica la hora de inicio y de fin.');
     if (!todoDia && fin !== '00:00' && toMin(fin) <= toMin(ini)) return err('La hora de fin tiene que ser posterior a la de inicio.');
-    const data = { titulo, tipo: F.tipo, fecha, todoDia, ocupa: todoDia ? q('#evOc').checked : undefined, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
+    const data = { titulo, tipo: F.tipo, fecha, todoDia, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
       trayecto: todoDia ? 0 : Number(q('#evTr').value), lugar: q('#evL').value.trim(), repite: null, excepciones: ev?.excepciones || [] };
     if (q('#evRep').checked) {
       if (!F.dias.size) return err('Elige al menos un día de la semana.');
@@ -894,7 +930,7 @@ function openEvent(id, ds, sMin, eMin) {
     } else data.excepciones = [];
     S.eventos = S.eventos || {};
     S.eventos[id || newId()] = data;
-    save(); close(); toast(id ? 'Evento actualizado' : 'Evento guardado'); render();
+    save(); close(); toast(id ? 'Evento actualizado' : 'Evento guardado', id ? deshacer : null); render();
   };
   if (q('#evDel')) q('#evDel').onclick = () => {
     const c = q('#evConf'); c.hidden = false;
@@ -905,8 +941,8 @@ function openEvent(id, ds, sMin, eMin) {
           <button type="button" class="btn danger" id="dAll">Toda la serie</button><button type="button" class="btn" id="dNo">Cancelar</button></div>`
       : `<span>¿Eliminar «${esc(ev.titulo)}»?</span><div class="row"><button type="button" class="btn danger" id="dAll">Sí, eliminar</button><button type="button" class="btn" id="dNo">Cancelar</button></div>`;
     q('#dNo').onclick = () => { c.hidden = true; };
-    q('#dAll').onclick = () => { delete S.eventos[id]; save(); close(); toast('Evento eliminado'); render(); };
-    if (q('#dOne')) q('#dOne').onclick = () => { ev.excepciones = [...new Set([...(ev.excepciones || []), ds])]; save(); close(); toast('Eliminado solo ese día'); render(); };
+    q('#dAll').onclick = () => { delete S.eventos[id]; save(); close(); toast('Evento eliminado', deshacer); render(); };
+    if (q('#dOne')) q('#dOne').onclick = () => { ev.excepciones = [...new Set([...(ev.excepciones || []), ds])]; save(); close(); toast('Eliminado solo ese día', deshacer); render(); };
   };
   setTimeout(() => { if (!ev) q('#evT').focus(); }, 50);
 }
@@ -1267,40 +1303,51 @@ function dayPlan(ds) {
     label: `Estudio · ${subj(h.code).n}`, sub: `${h.t ? h.t + ' · ' : ''}hecho ✓` });
   // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos; en exámenes se pueden dejar en pausa
   const evs = eventsOn(ds).filter(x => !(X && (X.pausar || []).includes(x.ev.tipo)));
-  const allDay = evs.filter(x => x.ev.todoDia);
-  for (const x of evs.filter(x => !x.ev.todoDia)) {
+  const entero = x => x.ev.todoDia || (x.s <= 0 && x.e >= 1440); // todo el día, o un día en medio de un viaje
+  const allDay = evs.filter(entero);
+  for (const x of evs.filter(x => !entero(x))) {
     const Te = Number(x.ev.trayecto) || 0;
-    blocks.push({ s: x.s, e: x.e, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo,
-      sub: [EV_NAME[x.ev.tipo], x.ev.lugar, x.ev.repite ? 'cada semana' : ''].filter(Boolean).join(' · ') });
+    // día de salida o de vuelta de un viaje: ocupa desde que te vas hasta dormir, o desde levantarte hasta que vuelves
+    const vj = x.ev.tipo === 'viaje' ? (x.s <= 0 ? 'vuelta' : x.e >= 1440 ? 'ida' : 'corto') : null;
+    blocks.push({ s: x.s, e: vj === 'ida' ? Math.max(sleep, x.s + 15) : x.e, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo, viaje: vj,
+      sub: vj === 'ida' ? ['Viaje', `te vas a las ${x.ev.ini}`, x.ev.lugar].filter(Boolean).join(' · ')
+        : vj === 'vuelta' ? ['Viaje', `vuelves a las ${x.ev.fin}`, x.ev.lugar].filter(Boolean).join(' · ')
+        : [EV_NAME[x.ev.tipo], x.ev.lugar, x.ev.repite ? 'cada semana' : ''].filter(Boolean).join(' · ') });
     if (Te) {
       blocks.push({ s: x.s - Te, e: x.s, kind: 'trayecto', label: `Ida · ${x.ev.titulo}` });
       blocks.push({ s: x.e, e: x.e + Te, kind: 'trayecto', label: `Vuelta · ${x.ev.titulo}` });
     }
   }
   // un plan de todo el día (viaje, estás fuera...) ocupa el día entero: sin rato libre ni estudio propuesto
-  const fuera = allDay.some(x => x.ev.ocupa !== false);
+  const fuera = allDay.length > 0;
   if (fuera) {
     // se ve como un evento que llena el día, de levantarte a dormir
-    const x = allDay.find(x => x.ev.ocupa !== false);
+    const x = allDay[0];
     blocks.push({ s: wake, e: sleep, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo,
-      sub: ['Todo el día', EV_NAME[x.ev.tipo], x.ev.lugar].filter(Boolean).join(' · ') });
+      sub: [x.ev.tipo === 'viaje' ? 'Viaje · todo el día' : 'Todo el día', x.ev.tipo === 'viaje' ? '' : EV_NAME[x.ev.tipo], x.ev.lugar].filter(Boolean).join(' · ') });
     blocks.sort((a, b) => a.s - b.s || a.e - b.e);
     return { info, blocks, free: [], skipped, wake, sleep, allDay: allDay.filter(y => y !== x), fuera, exRut: !!X, freeMin: 0,
       classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
   }
   // si algo empieza antes de lo habitual, te levantas antes
-  if (blocks.length) wake = Math.min(wake, Math.min(...blocks.map(b => b.s)) - P);
+  const enCasa = blocks.filter(b => b.viaje !== 'vuelta');
+  if (enCasa.length) wake = Math.min(wake, Math.min(...enCasa.map(b => b.s)) - P);
   // cambios de rutina solo para este día (comer fuera, merendar antes...): mandan sobre lo habitual
   const O = (S.diaRutina || {})[ds] || {};
   let wakeLen = P;
   if (O.despertar && !O.despertar.off) { wake = toMin(O.despertar.ini); wakeLen = Number(O.despertar.dur); }
-  blocks.push({ s: wake, e: wake + wakeLen, kind: 'rutina', label: RUT_LABEL.despertar, rk: 'despertar', mod: !!O.despertar });
+  // el día que vuelves de viaje te levantas fuera: el viaje ocupa desde que te levantas
+  const vuelta = blocks.find(b => b.viaje === 'vuelta');
+  if (vuelta) vuelta.s = wake;
+  else blocks.push({ s: wake, e: wake + wakeLen, kind: 'rutina', label: RUT_LABEL.despertar, rk: 'despertar', mod: !!O.despertar });
   const fixed = k => { const o = O[k]; if (!o || o.off) return null;
     const b = { s: toMin(o.ini), e: toMin(o.ini) + Number(o.dur), kind: 'rutina', label: RUT_LABEL[k], rk: k, mod: true }; blocks.push(b); return b; };
   const fx = { comida: fixed('comida'), descanso: fixed('descanso'), merienda: fixed('merienda'), cena: fixed('cena') };
   // maxShift: cuánto se puede retrasar como mucho (la merienda no tiene sentido a las 22:00)
   const place = (start, len, label, kind = 'rutina', maxShift = Infinity, rk = null) => {
     let t = start, moved = true;
+    // si cae mientras estás de viaje, esa comida la haces fuera: no se coloca
+    if (blocks.some(b => b.viaje && start < b.e && b.s < start + len)) return null;
     while (moved) { moved = false; for (const b of blocks) if (t < b.e && b.s < t + len) { t = b.e; moved = true; } }
     if (t + len > sleep || t - start > maxShift) return null;
     const b = { s: t, e: t + len, kind, label, rk }; blocks.push(b); return b;
@@ -1778,7 +1825,8 @@ function weekSchedule(monKey) {
   for (const d of days) {
     // huecos libres, sin los ratos que has saltado
     // 15 min de margen al llegar de un trayecto (no te pones a estudiar nada más cruzar la puerta)
-    let gaps = d.p.free.map(f => ({ s: f.s + (d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
+    // (y 30 min al volver de un viaje)
+    let gaps = d.p.free.map(f => ({ s: f.s + (d.p.blocks.some(b => b.viaje === 'vuelta' && b.e === f.s) ? 30 : d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
     for (const k of skips[d.ds] || []) gaps = gaps.flatMap(g => g.e <= k.s || g.s >= k.e ? [g] : [{ s: g.s, e: k.s }, { s: k.e, e: g.e }]);
     d.gaps = gaps.filter(g => g.e - g.s >= 30);
     // el tope del día descuenta el estudio que ya tiene (hecho o en vez de una clase)
