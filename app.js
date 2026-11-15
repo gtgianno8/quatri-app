@@ -1280,8 +1280,12 @@ function dayPlan(ds) {
   // un plan de todo el día (viaje, estás fuera...) ocupa el día entero: sin rato libre ni estudio propuesto
   const fuera = allDay.some(x => x.ev.ocupa !== false);
   if (fuera) {
+    // se ve como un evento que llena el día, de levantarte a dormir
+    const x = allDay.find(x => x.ev.ocupa !== false);
+    blocks.push({ s: wake, e: sleep, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo,
+      sub: ['Todo el día', EV_NAME[x.ev.tipo], x.ev.lugar].filter(Boolean).join(' · ') });
     blocks.sort((a, b) => a.s - b.s || a.e - b.e);
-    return { info, blocks, free: [], skipped, wake, sleep, allDay, fuera, exRut: !!X, freeMin: 0,
+    return { info, blocks, free: [], skipped, wake, sleep, allDay: allDay.filter(y => y !== x), fuera, exRut: !!X, freeMin: 0,
       classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
   }
   // si algo empieza antes de lo habitual, te levantas antes
