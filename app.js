@@ -342,6 +342,7 @@ async function probarUsuarios(n = 20, seed = 7) {
           if (b.s < p.wake || b.e > p.sleep) err(`${ds}: estudio fuera del día (${fmt(b.s % 1440)})`);
           const ex = examsOf(b.code).filter(e => e[1] <= ds && e[0] !== 'entrega');
           if (ex.length && ex.some(e => e[1] === ds)) err(`${ds}: estudio de ${subj(b.code).s} el día de su examen`);
+          if (visorConExamenes() && !nextExam(b.code, ds) && !(S.estudio?.nivel || {})[b.code]) err(`${ds}: estudio de ${subj(b.code).s}, que no tiene examen por delante`);
         }
         const yaHecho = p.blocks.filter(b => b.kind === 'estudio').reduce((m, b) => m + b.e - b.s, 0);
         const planMin = plan.reduce((m, b) => m + b.e - b.s, 0);
@@ -1154,7 +1155,7 @@ function openPlan(ds, s, e, code, tema, fijoId) {
   const { q, close } = sheet(`
     <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
     <p class="hint" style="margin:-6px 0 0">${DAYS[wdOf(d)]} ${d.getDate()} · ${fmt(s % 1440)}–${fmt(e % 1440)}${tema ? ` · ${esc(tema)}` : ''}</p>
-    <p style="margin:0">${fijoId ? 'Lo moviste tú a esta hora.' : 'Es una propuesta de Quatri para llegar bien al examen.'} Cuando lo hayas hecho, márcalo; si te va mejor otro rato, muévelo.</p>
+    <p style="margin:0">${fijoId ? 'Lo moviste tú a esta hora.' : nextExam(code, ds) ? 'Es una propuesta de Quatri para llegar bien al examen.' : 'Es una propuesta de Quatri para llevar la asignatura al día.'} Cuando lo hayas hecho, márcalo; si te va mejor otro rato, muévelo.</p>
     <div id="pMove" class="stack" hidden>
       <div class="fields">
         <label class="field"><span>Día</span><select id="pD">${dias.map(k => { const x = dparse(k); return `<option value="${k}" ${k === ds ? 'selected' : ''}>${k === today ? 'Hoy' : DAYS[wdOf(x)]} ${x.getDate()}</option>`; }).join('')}</select></label>
@@ -1878,8 +1879,25 @@ const exRef = e => e[5] ? `«${exName(e)}»` : `el ${e[0]}`;
 /* ---------- plan de estudio semanal ---------- */
 // ¿Estudias esta asignatura? Por defecto sí si tiene exámenes (Ampliació d'Informàtica no tiene: empieza en "no").
 // Cómo la llevas ya no se pregunta: se deduce del temario (lo que te queda frente a lo que entra).
-// se estudia si tiene exámenes o, aunque el visor no traiga sus fechas (pasa en algunas escuelas), si su guía tiene temario
-const levelOf = c => { const n = (S.estudio?.nivel || {})[c]; return n === 'no' ? 'no' : n ? 'si' : (examsOf(c).length || (TM && TM[c]?.length) ? 'si' : 'no'); };
+// Se estudia si tiene exámenes. Sin exámenes:
+//  - en escuelas cuyo visor trae los exámenes (casi todas sus asignaturas los tienen), es que no tiene examen
+//    (evaluación continua, proyectos...): no se propone estudio, salvo que digas que la estudias;
+//  - en escuelas que no publican las fechas en el visor (FIB, Camins, ETSAV), se estudia si su guía tiene temario.
+const visorConExamenes = () => {
+  if (D._cob == null) {
+    const con = Object.values(D.asignaturas).filter(a => Object.values(a.g).some(g => g.x.length));
+    D._cob = con.length ? con.filter(a => a.e.length).length / con.length : 0;
+  }
+  return D._cob >= 0.5;
+};
+const levelOf = c => {
+  const n = (S.estudio?.nivel || {})[c];
+  if (n === 'no') return 'no';
+  if (n) return 'si';
+  // con exámenes: se estudia mientras quede alguno por hacer
+  if (examsOf(c).length) return examsOf(c).some(e => e[1] >= dkey(new Date())) ? 'si' : 'no';
+  return !visorConExamenes() && TM && TM[c]?.length ? 'si' : 'no';
+};
 // Semana de estudio: de lunes a domingo (off = 0 esta semana, 1 la siguiente…)
 const estStart = (off = 0) => dkey(addDays(mondayOf(new Date()), 7 * off));
 // semana a la que pertenece un día (null si ya ha pasado: no se coloca estudio en el pasado)
@@ -2145,7 +2163,7 @@ function viewEstudio() {
       </section>
       <section class="card stack">
         <div class="eyebrow">Horas por asignatura</div>
-        ${W.rows.map(r => `<div class="adj-row" style="${colorVars(r.c)}"><span class="dot-c"></span><span class="adj-n">${esc(r.a.s)}<small>${esc(r.a.n)}</small></span>
+        ${W.rows.map(r => `<div class="adj-row" style="${colorVars(r.c)}"><span class="dot-c"></span><span class="adj-n">${esc(r.a.s)}<small>${esc(r.a.n)}${r.lv === 'no' && !examsOf(r.c).length && !(S.estudio?.nivel || {})[r.c] ? ' · sin examen' : ''}</small></span>
           ${r.lv === 'no' ? `<button class="btn small" data-l="${r.c}" data-v="si">La estudio</button>`
             : `<div class="stepper"><button data-m="${r.c}" aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p="${r.c}" aria-label="Más">+</button></div>`}
           </div>
