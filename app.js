@@ -322,7 +322,7 @@ async function probarUsuarios(n = 20, seed = 7) {
       if (rnd() < 0.3) evs.t3 = { titulo: 'Cumple', tipo: 'plan', fecha: dkey(addDays(new Date(), 3)), todoDia: true, ini: '', fin: '', trayecto: 0, lugar: '', repite: null, excepciones: [] };
       S = { escuela: id, grado: g.id, asignaturas: asig, grupos, listo: true, eventos: evs,
         rutina: { trayecto: pick([10, 20, 30, 45, 60, 75]), estudiaNoche: rnd() < 0.4, volverCasa: pick([0, 0, 120]), merienda: rnd() < 0.5 },
-        estMax: { semana: pick([1, 2, 3, 4]), finde: pick([0, 2, 3, 4, 6]) }, estPref: pick(['repartido', 'manana', 'tarde', 'noche']),
+        estMax: { semana: pick([1, 2, 3, 4]), finde: pick([0, 2, 3, 4, 6]) }, estPref: pick(['libre', 'repartido', 'manana', 'tarde', 'noche']),
         avisos: { on: true, clase: 10, estudio: true, examen: true, examenHora: '20:00', resumen: '08:00' } };
       PLAN_CACHE = {}; colorCache = null;
       const sinHorario = g.a.length - con.length;
@@ -785,8 +785,8 @@ function viewRutina() {
         <div class="fields">
           <label class="field"><span>Un día normal te ves estudiando</span><select id="estS">${[1, 1.5, 2, 3, 4].map(h => `<option value="${h}" ${(S.estMax?.semana ?? 2) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
           <label class="field"><span>Un día de fin de semana</span><select id="estF">${[0, 1, 2, 3, 4, 5].map(h => `<option value="${h}" ${(S.estMax?.finde ?? 3) === h ? 'selected' : ''}>${h ? hfmt(h) : 'Nada'}</option>`).join('')}</select></label>
-          <label class="field wide"><span>¿Cuándo prefieres estudiar?</span><select id="estPref">${[['repartido', 'Repartido: mañana y tarde'], ['manana', 'Por la mañana'], ['tarde', 'Por la tarde'], ['noche', 'Por la noche']]
-            .map(([k, t]) => `<option value="${k}" ${(S.estPref || 'repartido') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="field wide"><span>¿Cuándo prefieres estudiar?</span><select id="estPref">${[['libre', 'Donde tenga más tiempo libre'], ['repartido', 'Repartido: mañana y tarde'], ['manana', 'Por la mañana'], ['tarde', 'Por la tarde'], ['noche', 'Por la noche']]
+            .map(([k, t]) => `<option value="${k}" ${(S.estPref || 'libre') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         </div>
         <small class="hint">Quatri te propone el estudio en tus huecos libres a esas horas, sin pasar de esto al día (en exámenes, más). Siempre lo puedes mover.</small></section>
       <section class="card stack"><div class="eyebrow">La noche</div>
@@ -2007,21 +2007,25 @@ function weekSchedule(monKey) {
     let quota = capSum ? Math.min(d.cap, Math.round(total * d.cap / capSum / 15) * 15) : 0;
     const blocks = [], usedToday = {};
     // cada hueco se parte en mañana (hasta las 14), tarde (14–20) y noche (desde las 20)
-    // y se ordenan según cuándo prefieres estudiar; "repartido" alterna mañana, tarde y noche
+    // y se ordenan según cuándo prefieres estudiar. Por defecto ("libre"), donde más tiempo libre tienes:
+    // primero el hueco más largo del día. "repartido" alterna mañana, tarde y noche.
+    // En todos, dentro de cada franja van antes los huecos largos, y los ratos cortos entre clases (< 1 h) al final.
     const pieces = [];
     d.gaps.forEach((g, gi) => [[0, 840, 'm'], [840, 1200, 't'], [1200, 2880, 'n']].forEach(([a, b, w]) => {
       const s = Math.max(g.s, a), e = Math.min(g.e, b);
       if (e - s >= 30) pieces.push({ s, e, w, gi });
     }));
-    const pref = S.estPref || 'repartido', by = w => pieces.filter(p => p.w === w);
+    const largo = p => d.gaps[p.gi].e - d.gaps[p.gi].s;
+    const pref = S.estPref || 'libre', by = w => pieces.filter(p => p.w === w).sort((a, b) => largo(b) - largo(a));
     let order;
     if (pref === 'manana') order = [...by('m'), ...by('t'), ...by('n')];
-    else if (pref === 'tarde') order = [...by('t'), ...by('n'), ...by('m').reverse()];
-    else if (pref === 'noche') order = [...by('n').reverse(), ...by('t').reverse(), ...by('m').reverse()];
-    else { // repartido: un bloque por franja y vuelta
+    else if (pref === 'tarde') order = [...by('t'), ...by('n'), ...by('m')];
+    else if (pref === 'noche') order = [...by('n'), ...by('t'), ...by('m')];
+    else if (pref === 'repartido') { // un bloque por franja y vuelta
       const q = { m: by('m'), t: by('t'), n: by('n') }; order = [];
       while (q.m.length || q.t.length || q.n.length) for (const w of ['m', 't', 'n']) if (q[w].length) order.push(q[w].shift());
-    }
+    } else order = d.gaps.map((g, gi) => ({ s: g.s, e: g.e, gi })).sort((a, b) => (b.e - b.s) - (a.e - a.s));
+    order = [...order.filter(p => largo(p) >= 60), ...order.filter(p => largo(p) < 60)];
     const place = p => {
       if (quota < 30) return false;
       // el primer rato libre de esa franja, dejando 15 min de pausa con los bloques ya puestos en el mismo hueco
@@ -2034,7 +2038,10 @@ function weekSchedule(monKey) {
         .sort((a, b) => (usedToday[a] || 0) - (usedToday[b] || 0) || pend[b] - pend[a]);
       if (!cands.length) return false;
       const c = cands[0];
-      const len = Math.floor(Math.min(90, pend[c] < 30 ? 30 : pend[c], quota, lim - t) / 15) * 15;
+      // en "libre", como mucho la mitad de cada hueco (o 1 h 30 si es corto) es estudio: el resto sigue libre
+      const usado = blocks.filter(b => b.gi === p.gi).reduce((n, b) => n + b.e - b.s, 0);
+      const tope = pref === 'libre' ? Math.max(90, (d.gaps[p.gi].e - d.gaps[p.gi].s) / 2) - usado : Infinity;
+      const len = Math.floor(Math.min(90, pend[c] < 30 ? 30 : pend[c], quota, lim - t, tope) / 15) * 15;
       if (len < 30) return false;
       blocks.push({ s: t, e: t + len, code: c, kind: 'plan', label: `Estudio · ${subj(c).n}`, sub: 'Propuesta · toca para marcarlo o moverlo', tema: '', ds: d.ds, gi: p.gi });
       pend[c] -= len; quota -= len; usedToday[c] = (usedToday[c] || 0) + 1;
