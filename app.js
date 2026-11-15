@@ -483,6 +483,7 @@ function clashes(list) {
     if (a[0] !== b[0] || !weeksCompatible(a[5], b[5])) continue;
     // sesiones con fechas propias que no coinciden en el tiempo (p. ej. una solo en octubre y otra solo en diciembre)
     if (a[6] && b[6] && ((a[7] || a[6]) < b[6] || (b[7] || b[6]) < a[6])) continue;
+    if (a[8] && b[8] && !a[8].some(d => b[8].includes(d))) continue; // días sueltos que no coinciden
     if (toMin(a[1]) < toMin(b[2]) && toMin(b[1]) < toMin(a[2])) out.push([list[i], list[j]]);
   }
   return out;
@@ -1340,6 +1341,8 @@ function sesionHoy(x, ds, info) {
   if (p === 'B1' && ds > finBimestre1()) return false;
   if (p === 'B2' && ds <= finBimestre1()) return false;
   if (x[6] && (ds < x[6] || ds > (x[7] || x[6]))) return false;
+  // días exactos (MMDD): laboratorios de días sueltos, o escuelas que publican cada clase con su fecha
+  if (x[8] && !x[8].includes(+ds.slice(5, 7) * 100 + +ds.slice(8, 10))) return false;
   return true;
 }
 function dayInfo(ds) {

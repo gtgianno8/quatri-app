@@ -22,6 +22,15 @@
                          "aprox":  false
                      },
                      {
+                         "id":  "300",
+                         "s":  "EETAC",
+                         "n":  "Escola d\u0027Enginyeria de Telecomunicació i Aeroespacial de Castelldefels",
+                         "ciudad":  "Castelldefels",
+                         "archivo":  "upc-300-2026-27-q1.json",
+                         "grados":  5,
+                         "aprox":  false
+                     },
+                     {
                          "id":  "310",
                          "s":  "EPSEB",
                          "n":  "Escola Politècnica Superior d\u0027Edificació de Barcelona",
@@ -64,6 +73,15 @@
                          "ciudad":  "Sant Cugat del Vallès",
                          "archivo":  "upc-290-2026-27-q1.json",
                          "grados":  1,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "240",
+                         "s":  "ETSEIB",
+                         "n":  "Escola Tècnica Superior d\u0027Enginyeria Industrial de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-240-2026-27-q1.json",
+                         "grados":  2,
                          "aprox":  false
                      },
                      {
