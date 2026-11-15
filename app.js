@@ -1,7 +1,10 @@
 // Quatri · versión 0
 // Flujo de alta: grado -> asignaturas -> grupos -> tu semana. Los datos del alumno se guardan en su dispositivo.
 
-const DATA_URL = 'data/eseiaat-2026-27-q1.json';
+// Escuelas disponibles (data/escuelas.json) y, de cada una, su archivo de horarios, temarios y evaluación
+const ESC_URL = 'data/escuelas.json';
+const ESC_DEF = '205'; // ESEIAAT: la de quien ya usaba Quatri antes de que hubiera más escuelas
+let ESC = null;
 const STORE_KEY = 'quatri.v1';
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const DAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -121,6 +124,8 @@ function applyRemote(data) {
   S = { ...(data.datos || {}), ...keep, _sync: { uid: USER.id, at: data.actualizado, dirty: false } };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
   PLAN_CACHE = {}; colorCache = null; applyTheme();
+  // en tu cuenta estás en otra escuela: primero se cargan sus horarios
+  if (D && D._id !== escId()) { loadEscuela(escId()).then(() => applyRemote(data)).catch(() => {}); return; }
   if (S.listo && !STEPS.includes(current())) { if (!['hoy', 'calendario', 'estudio', 'ajustes', 'temario', 'rutinaex'].includes(location.hash.slice(1))) location.hash = 'hoy'; }
   // en un paso del alta (formularios) no se repinta para no borrar lo que estás escribiendo
   if (STEPS.includes(current())) return;
@@ -277,7 +282,105 @@ function programarAvisos(force) {
   }, force ? 0 : 4000);
 }
 // solo en la copia de pruebas del ordenador: para revisar la lista de avisos sin enviarlos
-if (location.hostname === 'localhost') window.__quatri = { listaAvisos, setAvisos: a => { S.avisos = { ...avisosCfg(), ...a }; } };
+if (location.hostname === 'localhost') window.__quatri = { listaAvisos, setAvisos: a => { S.avisos = { ...avisosCfg(), ...a }; }, probar: (...a) => probarUsuarios(...a) };
+
+/* ---------- prueba automática (solo en localhost) ----------
+   Simula alumnos nuevos de distintas escuelas (grado, cursos, asignaturas, grupos, rutina, eventos)
+   y recorre los días y las pantallas buscando errores. Deja los datos del dispositivo como estaban. */
+async function probarUsuarios(n = 20, seed = 7) {
+  let r = seed; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const backup = localStorage.getItem(STORE_KEY), D0 = D._id, hash0 = location.hash;
+  const user0 = USER; USER = null; // que nada de la prueba se suba a la cuenta
+  const ids = ESC.escuelas.map(e => e.id);
+  const orden = [...ids,'205', '270', '295', '330', '340', '250', '230', '205'].slice(0, n);
+  const tipos = ['un curso', 'curso + adelantadas', 'repetidor', 'pocas', 'dos cursos', 'optativas', 'curso + 1', 'mismo grupo'];
+  const hoyK = dkey(new Date()), informe = [];
+  for (let u = 0; u < orden.length; u++) {
+    const id = orden[u], fallos = [], avisos = [];
+    const err = (m) => { if (fallos.length < 12) fallos.push(m); };
+    try {
+      await loadEscuela(id); await loadTemarios();
+      const g = pick(D.grados), con = g.a.filter(c => hasSchedule(c));
+      const cursos = [...new Set(con.map(c => subj(c).c))].sort();
+      const c0 = pick(cursos), tipo = tipos[u % tipos.length];
+      const del = k => con.filter(c => subj(c).c === k && subj(c).t !== 'OP');
+      let asig = del(c0);
+      if (tipo === 'curso + adelantadas' && cursos.includes(c0 + 1)) asig = [...asig, ...del(c0 + 1).slice(0, 2)];
+      if (tipo === 'repetidor' && cursos.includes(c0 - 1)) asig = [...del(c0 - 1).slice(0, 2), ...asig.slice(0, 3)];
+      if (tipo === 'pocas') asig = asig.slice(0, 2);
+      if (tipo === 'dos cursos' && cursos.length > 1) asig = [...asig, ...del(cursos.find(k => k !== c0))];
+      if (tipo === 'optativas') asig = [...asig.slice(0, 2), ...con.filter(c => subj(c).t === 'OP').slice(0, 3)];
+      if (tipo === 'curso + 1') asig = [...asig, pick(con)];
+      asig = [...new Set(asig.length ? asig : con.slice(0, 4))];
+      // grupos: el mismo subgrupo en todas si existe, si no uno al azar de cada una
+      const comun = options(asig[0]).find(o => asig.every(c => options(c).includes(o)));
+      const grupos = Object.fromEntries(asig.map(c => [c, tipo === 'mismo grupo' && comun ? comun : pick(options(c))]));
+      const evs = {};
+      if (rnd() < 0.5) evs.t1 = { titulo: 'Entreno', tipo: 'entreno', fecha: hoyK, todoDia: false, ini: '19:00', fin: '20:30', trayecto: 15, lugar: '', repite: { dias: [1, 3], hasta: '' }, excepciones: [] };
+      if (rnd() < 0.4) { const v = dkey(addDays(mondayOf(new Date()), 11)); evs.t2 = { titulo: 'Viaje', tipo: 'viaje', fecha: v, ini: '16:00', fechaFin: dkey(addDays(dparse(v), 2)), fin: '18:00', todoDia: false, trayecto: 0, lugar: '', repite: null, excepciones: [] }; }
+      if (rnd() < 0.3) evs.t3 = { titulo: 'Cumple', tipo: 'plan', fecha: dkey(addDays(new Date(), 3)), todoDia: true, ini: '', fin: '', trayecto: 0, lugar: '', repite: null, excepciones: [] };
+      S = { escuela: id, grado: g.id, asignaturas: asig, grupos, listo: true, eventos: evs,
+        rutina: { trayecto: pick([10, 20, 30, 45, 60, 75]), estudiaNoche: rnd() < 0.4, volverCasa: pick([0, 0, 120]), merienda: rnd() < 0.5 },
+        estMax: { semana: pick([1, 2, 3, 4]), finde: pick([0, 2, 3, 4, 6]) }, estPref: pick(['repartido', 'manana', 'tarde', 'noche']),
+        avisos: { on: true, clase: 10, estudio: true, examen: true, examenHora: '20:00', resumen: '08:00' } };
+      PLAN_CACHE = {}; colorCache = null;
+      const sinHorario = g.a.length - con.length;
+      if (clashes(mySessions()).length) avisos.push(`${clashes(mySessions()).length} clases se pisan`);
+      // 1) cada día de las próximas 3 semanas
+      let estudioTotal = 0;
+      for (let i = 0; i < 21; i++) {
+        const ds = dkey(addDays(new Date(), i)), p = dayView(ds);
+        const nums = [...p.blocks, ...p.free].flatMap(b => [b.s, b.e]);
+        if (nums.some(x => !Number.isFinite(x))) err(`${ds}: horas no válidas`);
+        for (const b of p.blocks) if (b.e < b.s) err(`${ds}: bloque al revés (${b.label})`);
+        const plan = p.blocks.filter(b => b.kind === 'plan');
+        estudioTotal += plan.reduce((m, b) => m + b.e - b.s, 0);
+        for (const b of plan) {
+          const pisa = p.blocks.find(o => o !== b && o.kind !== 'noche' && o.s < b.e && b.s < o.e);
+          if (pisa) err(`${ds}: estudio ${fmt(b.s % 1440)} pisa ${pisa.kind} «${pisa.label}»`);
+          if (b.s < p.wake || b.e > p.sleep) err(`${ds}: estudio fuera del día (${fmt(b.s % 1440)})`);
+          const ex = examsOf(b.code).filter(e => e[1] <= ds && e[0] !== 'entrega');
+          if (ex.length && ex.some(e => e[1] === ds)) err(`${ds}: estudio de ${subj(b.code).s} el día de su examen`);
+        }
+        const yaHecho = p.blocks.filter(b => b.kind === 'estudio').reduce((m, b) => m + b.e - b.s, 0);
+        const planMin = plan.reduce((m, b) => m + b.e - b.s, 0);
+        if (planMin + yaHecho > estMax(ds) * 60 + 1 && plan.length) err(`${ds}: ${planMin} min de estudio con máximo ${estMax(ds)} h`);
+        if (p.fuera && plan.some(b => !b.fijoId)) err(`${ds}: estudio un día que está fuera`);
+      }
+      // 2) semanas
+      for (let w = 0; w < 3; w++) {
+        const W = weekPlan(estStart(w));
+        if (![W.total, W.sugerido, W.tope].every(Number.isFinite)) err(`semana ${w}: números no válidos`);
+        if (W.sugerido > W.tope + 0.01) err(`semana ${w}: propone ${W.sugerido} h con tope ${W.tope}`);
+      }
+      // 3) pantallas
+      const mira = async (nombre, fn) => {
+        try { await fn(); const h = $('#view').innerHTML; if (/undefined|NaN|\[object Object\]/.test(h)) err(`${nombre}: texto raro (${(h.match(/.{0,40}(undefined|NaN|\[object Object\]).{0,20}/) || [''])[0].replace(/<[^>]+>/g, ' ')})`); }
+        catch (e) { err(`${nombre}: ${e.message}`); }
+      };
+      for (let i = 0; i < 7; i++) { S.dia = dkey(addDays(new Date(), i * 3)); await mira(`Hoy +${i * 3}`, viewHoy); }
+      S.calVista = 'semana'; S.calSemana = estStart(0); await mira('Calendario semana', viewCalendario);
+      S.calSemana = estStart(1); await mira('Calendario semana 2', viewCalendario);
+      S.calVista = 'mes'; await mira('Calendario mes', viewCalendario);
+      for (let w = 0; w < 3; w++) { S.estOff = w; await mira(`Estudio semana ${w}`, viewEstudio); }
+      for (const c of asig) { S.temCode = c; await mira(`Temario ${subj(c).s}`, viewTemario); }
+      await mira('Ajustes', viewAjustes);
+      await mira('Grupos', viewGrupos); await mira('Semana de clases', viewSemana);
+      await mira('Escuela y grado', viewGrado); await mira('Asignaturas', viewAsignaturas); await mira('Rutina', viewRutina);
+      // 4) avisos
+      const L = listaAvisos();
+      if (L.some(a => isNaN(Date.parse(a.at)))) err('avisos con fecha no válida');
+      informe.push({ usuario: u + 1, escuela: D.escuela.s, grado: g.n, tipo, curso: c0, asignaturas: asig.length, sinHorario,
+        grupos: [...new Set(Object.values(grupos))].join(','), estudio_3sem: hfmt(estudioTotal / 60), avisos: L.length, notas: avisos.join('; '), fallos });
+    } catch (e) { informe.push({ usuario: u + 1, escuela: id, fallos: ['EXCEPCIÓN: ' + e.message + ' ' + (e.stack || '').split('\n')[1]] }); }
+  }
+  // todo como estaba
+  USER = user0;
+  try { if (backup) localStorage.setItem(STORE_KEY, backup); else localStorage.removeItem(STORE_KEY); } catch {}
+  S = load(); await loadEscuela(S.escuela || D0); location.hash = hash0; render();
+  return informe;
+}
 async function avisoPrueba() {
   try {
     const c = await sb();
@@ -377,6 +480,8 @@ function clashes(list) {
     const a = list[i].x, b = list[j].x;
     if (list[i].code === list[j].code) continue;
     if (a[0] !== b[0] || !weeksCompatible(a[5], b[5])) continue;
+    // sesiones con fechas propias que no coinciden en el tiempo (p. ej. una solo en octubre y otra solo en diciembre)
+    if (a[6] && b[6] && ((a[7] || a[6]) < b[6] || (b[7] || b[6]) < a[6])) continue;
     if (toMin(a[1]) < toMin(b[2]) && toMin(b[1]) < toMin(a[2])) out.push([list[i], list[j]]);
   }
   return out;
@@ -420,11 +525,14 @@ function viewGrado() {
   v.innerHTML = `
     <div class="eyebrow">Paso 1 de 5</div>
     <h1>¿Qué estudias?</h1>
-    <p class="lead">Elige tu grado y cargamos tus clases, festivos y exámenes. Tus datos se guardan solo en este dispositivo.</p>
+    <p class="lead">Elige tu escuela y tu grado, y cargamos tus clases, festivos y exámenes.</p>
+    <label class="field"><span>Escuela (UPC)</span>
+      <select id="escSel">${ESC.escuelas.map(e => `<option value="${esc(e.id)}" ${e.id === D._id ? 'selected' : ''}>${esc(e.s)} · ${esc(e.ciudad)}</option>`).join('')}</select>
+      <small>${esc(escInfo(D._id).n)}</small>
+    </label>
+    ${D.escuela?.aprox ? `<p class="notice">Para esta escuela, los festivos y las semanas A/B son aproximados: las clases y los exámenes sí son los oficiales. Si ves algo raro, se puede cambiar.</p>` : ''}
     <div class="fixed">
-      <span class="pill">Universidad <b>UPC</b></span>
-      <span class="pill">Escuela <b>ESEIAAT · Terrassa</b></span>
-      <span class="pill">Curso <b>2026/27 · Q1</b></span>
+      <span class="pill">Curso <b>${esc(D.periodo.curso.replace('-', '/'))} · ${esc(D.periodo.q)}</b></span>
     </div>
     <div class="stack" id="grados">
       ${D.grados.map(g => `
@@ -433,7 +541,14 @@ function viewGrado() {
           <span class="code">${esc(g.id)} · ${g.a.length} asignaturas</span></span>
         </button>`).join('')}
     </div>`;
+  $('#escSel').onchange = async e => {
+    const id = e.target.value;
+    try { await loadEscuela(id); } catch { toast('No se han podido cargar los horarios de esa escuela.'); e.target.value = D._id; return; }
+    if (S.escuela !== id) { S.escuela = id; S.grado = null; S.asignaturas = []; S.grupos = {}; S.listo = false; save(); }
+    viewGrado();
+  };
   v.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
+    if (!S.escuela) S.escuela = D._id;
     if (S.grado !== b.dataset.g) { S.grado = b.dataset.g; S.asignaturas = []; S.grupos = {}; S.listo = false; save(); }
     go('asignaturas');
   });
@@ -717,7 +832,7 @@ function viewBienvenida() {
   v.innerHTML = `
     <div class="welcome-top">
     <section class="hero">
-      <div class="eyebrow">Para estudiantes de la UPC · ESEIAAT</div>
+      <div class="eyebrow">Para estudiantes de la UPC</div>
       <h1 class="hero-t">Tu quatri,<br>bajo control<span class="dot">.</span></h1>
       <p class="lead">Quatri monta tu horario de la uni en dos minutos y te dice cuánto <b>tiempo libre te queda de verdad</b>: para estudiar, entrenar, trabajar o simplemente descansar.</p>
     </section>
@@ -745,7 +860,7 @@ function viewBienvenida() {
     <h2 class="sec">Cómo lo dejas listo</h2>
     <p class="lead" style="margin-bottom:10px">Cinco pasos, unos dos minutos. Lo puedes cambiar todo después.</p>
     <ol class="howto">
-      <li><b>Tu grado</b><span>Para saber qué asignaturas y horarios cargar.</span></li>
+      <li><b>Tu escuela y tu grado</b><span>Para saber qué asignaturas y horarios cargar.</span></li>
       <li><b>Tus asignaturas</b><span>Las de este cuatrimestre, aunque sean de cursos distintos.</span></li>
       <li><b>Tus grupos</b><span>Tu subgrupo de laboratorio o problemas; la teoría se pone sola.</span></li>
       <li><b>Revisa tu semana</b><span>Ves tu horario y te avisamos si alguna clase se pisa.</span></li>
@@ -757,7 +872,7 @@ function viewBienvenida() {
       <span><i aria-hidden="true">✓</i>Con tu cuenta de Google o tu correo, lo tienes igual en el móvil y el ordenador</span>
       <span><i aria-hidden="true">✓</i>Horarios oficiales del Visor d'Horaris UPC</span>
     </div>
-    <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de la ESEIAAT (Terrassa) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
+    <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de ${ESC.escuelas.length} escuelas de la UPC (${ESC.escuelas.map(e => esc(e.s)).join(', ')}) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
   if (S.listo) {
     actions(`<span class="info">Así funciona Quatri</span><button class="btn primary" id="next">Volver</button>`);
     $('#next').onclick = () => go('ajustes');
@@ -1067,10 +1182,20 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     q('#pDone').hidden = q('#pSkip').hidden = false; q('#pCancel').hidden = true;
   };
   q('#pSkip').onclick = () => {
+    // bloques de esa asignatura en la semana, para decir luego adónde ha ido (o que no cabe)
+    const semana = () => { const w = weekSchedule(estStartOf(ds) || estStart()); return Object.keys(w).filter(k => k !== '_sinHueco')
+      .flatMap(k => w[k].filter(b => b.code === code).map(b => ({ k, s: b.s, e: b.e, id: `${k}|${b.s}|${b.e}` }))); };
+    const antes = new Set(semana().map(b => b.id));
     S.estSkip = S.estSkip || {};
     (S.estSkip[ds] = S.estSkip[ds] || []).push({ s, e });
     quitarFijo();
-    save(); close(); toast('Recolocado en otro hueco'); render();
+    save(); close();
+    const nuevo = semana().find(b => !antes.has(b.id) && !(b.k === ds && b.s === s));
+    if (nuevo) {
+      const x = dparse(nuevo.k), dia = nuevo.k === dkey(new Date()) ? 'hoy' : nuevo.k === dkey(addDays(new Date(), 1)) ? 'mañana' : `el ${DAYS[wdOf(x)].toLowerCase()} ${x.getDate()}`;
+      toast(`Recolocado ${dia} a las ${fmt(nuevo.s % 1440)}`);
+    } else toast(`${fijoId ? 'Quitado' : 'Saltado'}. Esta semana no queda otro hueco libre para ${subj(code).s || 'esta asignatura'}: esas horas se quedan sin hacer.`);
+    render();
   };
   q('#pMv').onclick = () => {
     const box = q('#pMove');
@@ -1193,23 +1318,43 @@ const dur = m => { const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 function weekType(ds) {
-  const d = dparse(ds), mon = dkey(mondayOf(d)), sem = D.calendario.semanas;
+  const d = dparse(ds), mon = dkey(mondayOf(d)), sem = D.calendario.semanas || {}; // hay escuelas sin semanas A/B
   for (const t of ['A', 'B']) for (const start of sem[t] || []) {
     if (dkey(mondayOf(dparse(start))) === mon && ds >= start) return t;
   }
   return null;
+}
+// Último día del primer bimestre: el que diga el calendario o, si no, el final de los parciales (o la mitad del cuatrimestre)
+function finBimestre1() {
+  const c = D.calendario;
+  if (c.fin_bimestre1) return c.fin_bimestre1;
+  if (c.periodo_parciales) return c.periodo_parciales[1];
+  const a = dparse(c.inicio_clases), b = dparse(c.fin_clases);
+  return dkey(new Date((a.getTime() + b.getTime()) / 2));
+}
+// ¿Esta sesión toca este día? Semanas A/B, bimestres (B1 / B2) y sesiones con fechas propias (x[6] a x[7])
+function sesionHoy(x, ds, info) {
+  const p = x[5];
+  if (p && p.length === 1 && p !== info.week) return false;
+  if (p === 'B1' && ds > finBimestre1()) return false;
+  if (p === 'B2' && ds <= finBimestre1()) return false;
+  if (x[6] && (ds < x[6] || ds > (x[7] || x[6]))) return false;
+  return true;
 }
 function dayInfo(ds) {
   const c = D.calendario, d = dparse(ds), wd = wdOf(d);
   const inPeriod = ds >= c.inicio_clases && ds <= c.fin_clases;
   const lective = inPeriod && wd < 5 && !(c.dias_sin_clase || []).includes(ds);
   const finales = c.periodo_finales && ds >= c.periodo_finales[0] && ds <= c.periodo_finales[1];
+  // días con horario de otro día ("el miércoles 14 tiene horario de lunes")
+  const cambio = (c.cambio_dia || {})[ds];
   let note = '';
   if (wd >= 5) note = 'Fin de semana';
   else if (inPeriod && !lective) note = 'Día sin clases';
   else if (finales) note = 'Período de exámenes finales';
   else if (!inPeriod && ds > c.fin_clases) note = 'Sin clases (vacaciones o exámenes)';
-  return { d, wd, lective, week: lective ? weekType(ds) : null, note };
+  else if (lective && cambio != null) note = `Hoy va con horario de ${DAYS[cambio].toLowerCase()}`;
+  return { d, wd, clsWd: lective && cambio != null ? cambio : wd, lective, week: lective ? weekType(ds) : null, note };
 }
 // Clases a las que no vas. S.noVoy[clave] = siempre (cada semana); S.faltas['fecha|clave'] = solo ese día.
 // { estudio: 'no' | 'casa' | 'uni' }, o { voy: true } para ir un día concreto aunque normalmente no vayas.
@@ -1248,8 +1393,7 @@ function dayPlan(ds) {
   if (info.lective) {
     for (const s of mySessions()) {
       const x = s.x;
-      if (x[0] !== info.wd) continue;
-      if (x[5] && x[5].length === 1 && x[5] !== info.week) continue; // laboratorios de semanas alternas
+      if (x[0] !== info.clsWd || !sesionHoy(x, ds, info)) continue;
       const ck = clsKey(s), f = clsSkip(ds, ck);
       const base = { s: toMin(x[1]), e: toMin(x[2]), code: s.code, ck, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` };
       if (!f) { blocks.push({ ...base, kind: 'clase' }); continue; }
@@ -1673,7 +1817,7 @@ function calMonth() {
     const d = addDays(start, i);
     if (i % 7 === 0 && i > 0 && d > new Date(y, m, 0)) break; // la última fila llega hasta el domingo
     const ds = dkey(d), info = dayInfo(ds), inMonth = d.getMonth() === m - 1;
-    const classCodes = info.lective ? [...new Set(mySessions().filter(s => s.x[0] === info.wd && (!(s.x[5] && s.x[5].length === 1) || s.x[5] === info.week)).map(s => s.code))] : [];
+    const classCodes = info.lective ? [...new Set(mySessions().filter(s => s.x[0] === info.clsWd && sesionHoy(s.x, ds, info)).map(s => s.code))] : [];
     const exams = codes.flatMap(c => examsOf(c).filter(e => e[1] === ds).map(e => ({ c, e })));
     const nolect = info.wd < 5 && !info.lective;
     if (inMonth) {
@@ -1734,7 +1878,8 @@ const exRef = e => e[5] ? `«${exName(e)}»` : `el ${e[0]}`;
 /* ---------- plan de estudio semanal ---------- */
 // ¿Estudias esta asignatura? Por defecto sí si tiene exámenes (Ampliació d'Informàtica no tiene: empieza en "no").
 // Cómo la llevas ya no se pregunta: se deduce del temario (lo que te queda frente a lo que entra).
-const levelOf = c => { const n = (S.estudio?.nivel || {})[c]; return n === 'no' ? 'no' : n ? 'si' : (examsOf(c).length ? 'si' : 'no'); };
+// se estudia si tiene exámenes o, aunque el visor no traiga sus fechas (pasa en algunas escuelas), si su guía tiene temario
+const levelOf = c => { const n = (S.estudio?.nivel || {})[c]; return n === 'no' ? 'no' : n ? 'si' : (examsOf(c).length || (TM && TM[c]?.length) ? 'si' : 'no'); };
 // Semana de estudio: de lunes a domingo (off = 0 esta semana, 1 la siguiente…)
 const estStart = (off = 0) => dkey(addDays(mondayOf(new Date()), 7 * off));
 // semana a la que pertenece un día (null si ya ha pasado: no se coloca estudio en el pasado)
@@ -2041,14 +2186,15 @@ function viewEstudio() {
 /* ---------- temario de cada asignatura ----------
    Sale de la guía docente oficial (apartado CONTINGUTS) y el alumno lo puede editar.
    S.temario[código] = { temas: [{ id, t, d, h, ex: 'pf'|'p'|'f'|'', st: 'nuevo'|'viendo'|'ok'|'repasar' }] } */
-const TEM_URL = 'data/temarios-eseiaat.json';
 let TM = null; // temarios de la guía, se cargan la primera vez que hacen falta
 let EV = {};   // evaluación de la guía: código -> [final: 'todo'|'segunda'|'elegir'|'', pesos]
 async function loadTemarios() {
   if (TM) return TM;
+  const id = D._id;
   const get = async u => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch { return {}; } };
-  [TM, EV] = await Promise.all([get(TEM_URL), get('data/evaluacion-eseiaat.json')]);
-  return TM;
+  const [t, e] = await Promise.all([get(`data/temarios-${id}.json`), get(`data/evaluacion-${id}.json`)]);
+  if (D._id === id) { TM = t; EV = e; } // si mientras tanto has cambiado de escuela, no sirve
+  return TM || {};
 }
 const TEM_ST = [['nuevo', 'Sin empezar'], ['viendo', 'Viendo'], ['ok', 'Lo tengo'], ['repasar', 'Repasar']];
 // Títulos de la guía en MAYÚSCULAS -> "Tema 2: Electrocinètica" (se respetan números romanos y siglas cortas)
@@ -2458,7 +2604,7 @@ function viewAjustes() {
       <button class="choice" data-go="semana"><span><b>Mi horario de clases</b><span class="code">Semana tipo y avisos de solapes</span></span></button>
       <button class="choice" data-go="grupos"><span><b>Mis grupos</b><span class="code">Cambiar de subgrupo en alguna asignatura</span></span></button>
       <button class="choice" data-go="asignaturas"><span><b>Mis asignaturas</b><span class="code">Añadir o quitar asignaturas</span></span></button>
-      <button class="choice" data-go="grado"><span><b>Cambiar de grado</b><span class="code">Empieza de nuevo con otro grado</span></span></button>
+      <button class="choice" data-go="grado"><span><b>Cambiar de escuela o de grado</b><span class="code">${esc(D.escuela?.s || '')} · ${esc(grado()?.n || '')}</span></span></button>
       <button class="choice" data-go="bienvenida"><span><b>Cómo funciona Quatri</b><span class="code">Vuelve a ver la presentación</span></span></button>
     </div>
     <p class="hint" style="margin-top:18px">Horarios: Visor d'Horaris UPC · Créditos, temario y evaluación: guías docentes UPC · <a href="privacidad.html" target="_blank" rel="noopener">Privacidad</a></p>`;
@@ -2498,11 +2644,20 @@ function viewAjustes() {
 }
 
 /* ---------- arranque ---------- */
+const escId = () => S.escuela || ESC_DEF;
+const escInfo = id => (ESC?.escuelas || []).find(x => x.id === (id || escId()));
+// carga los horarios de una escuela (y olvida el temario de la anterior)
+async function loadEscuela(id) {
+  if (!ESC) { const r = await fetch(ESC_URL); if (!r.ok) throw new Error(r.status); ESC = await r.json(); }
+  const e = escInfo(id) || escInfo(ESC_DEF);
+  const r = await fetch('data/' + e.archivo);
+  if (!r.ok) throw new Error(r.status);
+  D = await r.json(); D._id = e.id;
+  TM = null; EV = {}; PLAN_CACHE = {}; colorCache = null;
+}
 async function start() {
   try {
-    const r = await fetch(DATA_URL);
-    if (!r.ok) throw new Error(r.status);
-    D = await r.json();
+    await loadEscuela(escId());
   } catch (e) {
     $('#view').innerHTML = `<h1>No se han podido cargar los horarios</h1><p class="lead">Revisa tu conexión y vuelve a abrir la app.</p>`;
     return;
