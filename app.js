@@ -841,6 +841,7 @@ function openEvent(id, ds, sMin, eMin) {
       <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
       <label class="field"><span>Día</span><input type="date" id="evD" value="${ev?.fecha || ds}"></label>
       <label class="check"><input type="checkbox" id="evAll" ${ev?.todoDia ? 'checked' : ''}> Todo el día</label>
+      <label class="check" id="evOcBox" ${ev?.todoDia ? '' : 'hidden'}><input type="checkbox" id="evOc" ${ev?.ocupa === false ? '' : 'checked'}> Estoy fuera / ocupado todo el día<small class="hint" style="display:block">Ese día no te propondremos estudio ni contará como tiempo libre. Desmárcalo para recordatorios (un cumpleaños, por ejemplo).</small></label>
       <div class="fields" id="evTimes" ${ev?.todoDia ? 'hidden' : ''}>
         <label class="field"><span>Empieza</span><input type="time" id="evI" step="300" value="${ev?.ini || fmt(s0)}"></label>
         <label class="field"><span>Acaba</span><input type="time" id="evF" step="300" value="${ev?.fin || fmt(e0 % 1440)}"></label>
@@ -869,7 +870,7 @@ function openEvent(id, ds, sMin, eMin) {
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
   ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
   ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const i = +b.dataset.d; F.dias.has(i) ? F.dias.delete(i) : F.dias.add(i); b.setAttribute('aria-pressed', String(F.dias.has(i))); });
-  q('#evAll').onchange = () => { q('#evTimes').hidden = q('#evAll').checked; };
+  q('#evAll').onchange = () => { q('#evTimes').hidden = q('#evAll').checked; q('#evOcBox').hidden = !q('#evAll').checked; };
   q('#evRep').onchange = () => {
     q('#evRepBox').hidden = !q('#evRep').checked;
     if (q('#evRep').checked && !F.dias.size && q('#evD').value) { const i = wdOf(dparse(q('#evD').value)); F.dias.add(i); q(`[data-d="${i}"]`).setAttribute('aria-pressed', 'true'); }
@@ -883,7 +884,7 @@ function openEvent(id, ds, sMin, eMin) {
     if (!fecha) return err('Elige el día.');
     if (!todoDia && (!ini || !fin)) return err('Indica la hora de inicio y de fin.');
     if (!todoDia && fin !== '00:00' && toMin(fin) <= toMin(ini)) return err('La hora de fin tiene que ser posterior a la de inicio.');
-    const data = { titulo, tipo: F.tipo, fecha, todoDia, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
+    const data = { titulo, tipo: F.tipo, fecha, todoDia, ocupa: todoDia ? q('#evOc').checked : undefined, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
       trayecto: todoDia ? 0 : Number(q('#evTr').value), lugar: q('#evL').value.trim(), repite: null, excepciones: ev?.excepciones || [] };
     if (q('#evRep').checked) {
       if (!F.dias.size) return err('Elige al menos un día de la semana.');
@@ -1275,6 +1276,13 @@ function dayPlan(ds) {
       blocks.push({ s: x.s - Te, e: x.s, kind: 'trayecto', label: `Ida · ${x.ev.titulo}` });
       blocks.push({ s: x.e, e: x.e + Te, kind: 'trayecto', label: `Vuelta · ${x.ev.titulo}` });
     }
+  }
+  // un plan de todo el día (viaje, estás fuera...) ocupa el día entero: sin rato libre ni estudio propuesto
+  const fuera = allDay.some(x => x.ev.ocupa !== false);
+  if (fuera) {
+    blocks.sort((a, b) => a.s - b.s || a.e - b.e);
+    return { info, blocks, free: [], skipped, wake, sleep, allDay, fuera, exRut: !!X, freeMin: 0,
+      classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
   }
   // si algo empieza antes de lo habitual, te levantas antes
   if (blocks.length) wake = Math.min(wake, Math.min(...blocks.map(b => b.s)) - P);
@@ -1721,7 +1729,8 @@ function weekPlan(monKey) {
     sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.6), Math.round(need)));
   }
   // nunca más de lo que tú has dicho que quieres estudiar al día (2 h × 5 + 4 h × 2 = 18 h, por ejemplo)
-  const tope = [0, 1, 2, 3, 4, 5, 6].reduce((n, i) => n + estMax(dkey(addDays(mon, i))), 0);
+  // (los días que estás fuera todo el día no cuentan)
+  const tope = [0, 1, 2, 3, 4, 5, 6].reduce((n, i) => n + (days[i]?.fuera ? 0 : estMax(dkey(addDays(mon, i)))), 0);
   sugerido = Math.min(sugerido, tope);
   const objetivo = E.objetivo ?? sugerido;
   const fixed = rows.filter(r => r.lv !== 'no' && E.ajuste[r.c] != null);
