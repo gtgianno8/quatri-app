@@ -231,8 +231,6 @@ details.opt summary{cursor:pointer;color:var(--accent);font-weight:500;font-size
 .it.rutina .n b,.it.trayecto .n b,.it.noche .n b{font-weight:600;color:var(--muted);font-size:15px}
 .it.libre .n b{color:var(--good);font-weight:800}
 .it.libre .dot{background:var(--good)}
-.it.saltada{opacity:.55}
-.it.saltada .n b{text-decoration:line-through;text-decoration-thickness:1px}
 .it.mod .t{color:var(--warn)}
 .it.cur{background:var(--accent-soft);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:14px;border-bottom-color:transparent}
 

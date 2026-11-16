@@ -1571,7 +1571,7 @@ const dotStyle = it => it.code ? colorVars(it.code) : `--c:${kindColor(it)}`;
 const itemLabel = it => it.kind === 'libre' ? 'Libre' : it.kind === 'saltada' ? `No vas · ${it.label}` : it.label;
 function itemSub(it) {
   if (it.kind === 'saltada') return `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}`;
-  if (it.kind === 'libre') return 'Toca para añadir algo aquí';
+  if (it.kind === 'libre') return it.skip ? `En vez de ${it.skip.label} · toca para cambiarlo` : 'Toca para añadir algo aquí';
   return [it.sub, it.mod ? 'cambiado solo este día' : ''].filter(Boolean).join(' · ');
 }
 // qué puedes hacer con cada bloque (en la tarjeta de ahora y en el día a pantalla completa)
@@ -1581,7 +1581,9 @@ function itemActions(it, ds) {
     A.push({ l: 'Hecho', i: 'check', f: () => marcarHecho(ds, it.s, it.e, it.code, it.fijoId) });
     A.push({ l: 'Cambiar', i: 'swap', f: () => openPlan(ds, it.s, it.e, it.code, it.tema, it.fijoId) });
   } else if (it.kind === 'clase' && it.ck) A.push({ l: 'No voy', i: 'x', f: () => openClase(ds, it.ck) });
+  else if (it.kind === 'libre' && it.skip) A.push({ l: 'Cambiar', i: 'swap', f: () => openClase(ds, it.skip.ck) });
   else if (it.kind === 'libre') A.push({ l: 'Añadir', i: 'plus', f: () => openEvent(null, ds, Math.ceil(it.s / 15) * 15, Math.min(Math.ceil(it.s / 15) * 15 + 60, it.e)) });
+  else if (it.kind === 'estudio' && it.ck && !it.doneId) A.push({ l: 'Cambiar', i: 'swap', f: () => openClase(ds, it.ck) });
   else if (it.kind === 'evento' && it.id) A.push({ l: 'Editar', i: 'edit', f: () => openEvent(it.id, ds) });
   else if (it.rk) A.push({ l: 'Cambiar', i: 'edit', f: () => openRutinaDia(ds, it.rk) });
   else if (it.exId) A.push({ l: 'Ver', i: 'eye', f: () => openExamen(it.code, it.exId) });
@@ -1591,7 +1593,10 @@ function itemActions(it, ds) {
 const nowMin = p => { const n = new Date(); let m = n.getHours() * 60 + n.getMinutes(); if (m < p.wake && m + 1440 < p.sleep + 1) m += 1440; return m; };
 const left = m => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) : ''}` : `${m} min`;
 function dayItems(p) {
-  return [...p.blocks, ...p.free, ...p.skipped].sort((a, b) => a.s - b.s || (b.kind === 'saltada') - (a.kind === 'saltada'));
+  // las clases a las que no vas no se ven: en su lugar está lo que haces (estudio o rato libre).
+  // El rato libre que deja una clase recuerda cuál era, para poder cambiarlo o volver a ir.
+  for (const f of p.free) f.skip = p.skipped.find(k => k.s < f.e && f.s < k.e) || null;
+  return [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
 }
 
 function viewHoy() {
@@ -1626,7 +1631,7 @@ function viewHoy() {
   const strip = [0, 1, 2, 3, 4, 5, 6].map(i => { const x = addDays(mon, i), k = dkey(x);
     return `<button class="ds${k === ds ? ' on' : ''}${k === today ? ' today' : ''}" data-day="${k}" aria-label="${DAYS[wdOf(x)]} ${x.getDate()}"><span>${DOW1[i]}</span><b>${x.getDate()}</b></button>`; }).join('');
   const row = it => {
-    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"`
+    const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? (it.skip ? `data-cls="${esc(it.skip.ck)}"` : `data-free="${it.s},${it.e}"`) : it.rk ? `data-rut="${it.rk}"`
       : it.kind === 'plan' ? `data-plan="${it.s},${it.e},${it.code},${it.fijoId || ''}" data-tema="${esc(it.tema || '')}"` : it.doneId ? `data-done="${it.doneId}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
     const sub = itemSub(it);
     return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}${it === cur && enCurso ? ' cur' : ''}" style="${dotStyle(it)}" ${data}>
