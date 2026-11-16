@@ -319,7 +319,8 @@ async function probarUsuarios(n = 20, seed = 7) {
       const evs = {};
       if (rnd() < 0.5) evs.t1 = { titulo: 'Entreno', tipo: 'entreno', fecha: hoyK, todoDia: false, ini: '19:00', fin: '20:30', trayecto: 15, lugar: '', repite: { dias: [1, 3], hasta: '' }, excepciones: [] };
       if (rnd() < 0.4) { const v = dkey(addDays(mondayOf(new Date()), 11)); evs.t2 = { titulo: 'Viaje', tipo: 'viaje', fecha: v, ini: '16:00', fechaFin: dkey(addDays(dparse(v), 2)), fin: '18:00', todoDia: false, trayecto: 0, lugar: '', repite: null, excepciones: [] }; }
-      if (rnd() < 0.3) evs.t3 = { titulo: 'Cumple', tipo: 'plan', fecha: dkey(addDays(new Date(), 3)), todoDia: true, ini: '', fin: '', trayecto: 0, lugar: '', repite: null, excepciones: [] };
+      if (rnd() < 0.5) evs.t4 = { titulo: 'Academia', tipo: 'academia', asig: '', modo: pick(['uni', 'otro', 'online']), fecha: hoyK, todoDia: false, ini: '08:00', fin: '09:30', trayecto: 20, lugar: '', repite: { dias: [1, 4], hasta: '' }, excepciones: [] };
+      if (rnd() < 0.3) evs.t3 ={ titulo: 'Cumple', tipo: 'plan', fecha: dkey(addDays(new Date(), 3)), todoDia: true, ini: '', fin: '', trayecto: 0, lugar: '', repite: null, excepciones: [] };
       S = { escuela: id, grado: g.id, asignaturas: asig, grupos, listo: true, eventos: evs,
         rutina: { trayecto: pick([10, 20, 30, 45, 60, 75]), estudiaNoche: rnd() < 0.4, volverCasa: pick([0, 0, 120]), merienda: rnd() < 0.5 },
         estMax: { semana: pick([1, 2, 3, 4]), finde: pick([0, 2, 3, 4, 6]) }, estPref: pick(['libre', 'repartido', 'manana', 'tarde', 'noche']),
@@ -770,6 +771,13 @@ function viewRutina() {
           ${mins('prep', 'Levantarte, prepararte y desayunar', [15, 30, 45, 60, 75, 90], R.prep)}
           ${time('despertarLibre', 'Días sin clase te levantas a las', R.despertarLibre)}
         </div></section>
+      <section class="card stack"><div class="eyebrow">Academia</div>
+        <p class="hint" style="margin:0">¿Vas a academia? Añade tus clases: si es cerca de la uni, va con tu viaje a la uni (sin otra ida y vuelta).</p>
+        ${Object.entries(S.eventos || {}).filter(([, e]) => e.tipo === 'academia').map(([id, e]) => `
+          <button class="asrow" data-acad="${id}" style="--c:${evColor('academia')}"><span class="dot"></span><span class="asn"><b>${esc(e.titulo)}</b>
+            <small>${e.repite ? e.repite.dias.map(i => DAYS_SHORT[i]).join(', ') : e.fecha} · ${e.ini}–${e.fin} · ${(ACAD_MODOS.find(m => m[0] === e.modo) || ACAD_MODOS[0])[1].toLowerCase()}</small></span><span aria-hidden="true">›</span></button>`).join('')}
+        <button class="btn" id="addAcad" type="button">+ Añadir clase de academia</button>
+      </section>
       <section class="card stack"><div class="eyebrow">Comidas y descansos</div>
         <div class="fields">
           ${time('comida', 'Sueles comer a las', R.comida, 'Si a esa hora estás en clase o volviendo, se mueve a cuando llegues.')}
@@ -808,6 +816,8 @@ function viewRutina() {
     save();
   };
   v.querySelectorAll('input,select').forEach(el => el.onchange = read);
+  $('#addAcad').onclick = () => openEvent(null, null, 17 * 60, 18 * 60 + 30, 'academia');
+  v.querySelectorAll('[data-acad]').forEach(b => b.onclick = () => openEvent(b.dataset.acad));
   actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Empezar'}</button>`);
   $('#back').onclick = () => go(S.listo ? 'hoy' : 'semana');
   $('#next').onclick = () => {
@@ -935,9 +945,11 @@ function viewListo() {
 }
 
 /* ---------- eventos propios ---------- */
-const EV_TYPES = [['entreno', 'Entreno', '#E8590C'], ['trabajo', 'Trabajo', '#5F3DC4'], ['partido', 'Partido', '#C2255C'],
+const EV_TYPES = [['academia', 'Academia', '#9C36B5'], ['entreno', 'Entreno', '#E8590C'], ['trabajo', 'Trabajo', '#5F3DC4'], ['partido', 'Partido', '#C2255C'],
   ['plan', 'Plan', '#1971C2'], ['viaje', 'Viaje', '#2B8A3E'], ['estudio', 'Estudio', '#0B7285'], ['otro', 'Otro', '#495057']];
 const EV_NAME = Object.fromEntries(EV_TYPES.map(t => [t[0], t[1]]));
+// Academia: dónde es. "uni" = cerca de la uni (comparte el viaje a la uni), "otro" = con su propio trayecto, "online" = desde casa
+const ACAD_MODOS = [['uni', 'Cerca de la uni'], ['otro', 'En otro sitio'], ['online', 'Online']];
 const evColor = tipo => (EV_TYPES.find(t => t[0] === tipo) || EV_TYPES.find(t => t[0] === 'otro'))[2];
 function eventsOn(ds) {
   const out = [], wd = (dparse(ds).getDay() + 6) % 7;
@@ -956,9 +968,13 @@ function eventsOn(ds) {
 }
 const newId = () => 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-function openEvent(id, ds, sMin, eMin) {
+function openEvent(id, ds, sMin, eMin, tipo0) {
   const ev = id ? S.eventos[id] : null;
-  const F = { tipo: ev?.tipo || 'plan', dias: new Set(ev?.repite?.dias || []) };
+  ds = ds || dkey(new Date());
+  const F = { tipo: ev?.tipo || tipo0 || 'plan', dias: new Set(ev?.repite?.dias || []), modo: ev?.modo || 'uni' };
+  // una clase de academia nueva se repite cada semana ese día (lo normal)
+  const repIni = !!ev?.repite || (!ev && tipo0 === 'academia');
+  if (!ev && tipo0 === 'academia') F.dias.add(wdOf(dparse(ds)));
   const s0 = sMin ?? 17 * 60, e0 = eMin ?? Math.min(s0 + 60, 23 * 60 + 55);
   const ov = document.createElement('div');
   ov.className = 'ov';
@@ -967,6 +983,11 @@ function openEvent(id, ds, sMin, eMin) {
       <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
       <label class="field"><span>Qué es</span><input id="evT" maxlength="60" placeholder="Ej.: Entreno en pista" value="${esc(ev?.titulo || '')}" autocomplete="off"></label>
       <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
+      <div id="evAcad" class="stack" hidden>
+        <label class="field"><span>Asignatura</span><select id="evA"><option value="">Otra / varias</option>${(S.asignaturas || []).filter(c => subj(c)).map(c => `<option value="${c}" ${ev?.asig === c ? 'selected' : ''}>${esc(subj(c).n)}</option>`).join('')}</select></label>
+        <div class="field"><span>Dónde es</span><div class="seg2" role="group" style="margin:0">${ACAD_MODOS.map(([k, n]) => `<button type="button" data-m="${k}">${n}</button>`).join('')}</div>
+          <small id="evAHint"></small></div>
+      </div>
       <div id="evViaje" class="stack" hidden>
         <div class="fields">
           <label class="field"><span>Te vas el</span><input type="date" id="evVD" value="${ev?.fecha || ds}"></label>
@@ -982,10 +1003,10 @@ function openEvent(id, ds, sMin, eMin) {
       <div class="fields" id="evTimes" ${ev?.todoDia ? 'hidden' : ''}>
         <label class="field"><span>Empieza</span><input type="time" id="evI" step="300" value="${ev?.ini || fmt(s0)}"></label>
         <label class="field"><span>Acaba</span><input type="time" id="evF" step="300" value="${ev?.fin || fmt(e0 % 1440)}"></label>
-        <label class="field wide"><span>Tardas en llegar</span><select id="evTr">${[0, 5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90].map(m => `<option value="${m}" ${Number(ev?.trayecto || 0) === m ? 'selected' : ''}>${m ? dur(m) : 'Es en casa / no cuenta'}</option>`).join('')}</select><small>Se añade la ida antes y la vuelta después.</small></label>
+        <label class="field wide" id="evTrBox"><span>Tardas en llegar</span><select id="evTr">${[0, 5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90].map(m => `<option value="${m}" ${Number(ev?.trayecto || 0) === m ? 'selected' : ''}>${m ? dur(m) : 'Es en casa / no cuenta'}</option>`).join('')}</select><small>Se añade la ida antes y la vuelta después.</small></label>
       </div>
-      <label class="check"><input type="checkbox" id="evRep" ${ev?.repite ? 'checked' : ''}> Se repite cada semana</label>
-      <div id="evRepBox" class="stack" ${ev?.repite ? '' : 'hidden'}>
+      <label class="check"><input type="checkbox" id="evRep" ${repIni ? 'checked' : ''}> Se repite cada semana</label>
+      <div id="evRepBox" class="stack" ${repIni ? '' : 'hidden'}>
         <div class="evdays">${DAYS_SHORT.map((d, i) => `<button type="button" data-d="${i}" aria-pressed="${F.dias.has(i)}">${d}</button>`).join('')}</div>
         <label class="field"><span>Hasta (opcional)</span><input type="date" id="evH" value="${ev?.repite?.hasta || ''}"></label>
       </div>
@@ -1007,7 +1028,16 @@ function openEvent(id, ds, sMin, eMin) {
   ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
   // el viaje tiene salida y vuelta (puede durar varios días); el resto, día y horas
-  const modo = () => { const v = F.tipo === 'viaje'; q('#evViaje').hidden = !v; q('#evNormal').hidden = v; };
+  // academia: asignatura y dónde es; si es cerca de la uni u online, no lleva trayecto propio
+  const modo = () => {
+    const v = F.tipo === 'viaje', ac = F.tipo === 'academia';
+    q('#evViaje').hidden = !v; q('#evNormal').hidden = v; q('#evAcad').hidden = !ac;
+    q('#evTrBox').hidden = ac && F.modo !== 'otro';
+    ov.querySelectorAll('[data-m]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === F.modo)));
+    q('#evAHint').textContent = F.modo === 'uni' ? 'Va con tu viaje a la uni: una sola ida y una sola vuelta ese día.'
+      : F.modo === 'online' ? 'Desde casa: sin trayecto.' : 'Pon abajo cuánto tardas en llegar.';
+  };
+  ov.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { F.modo = b.dataset.m; modo(); });
   ov.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { F.tipo = b.dataset.t; ov.querySelectorAll('[data-t]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); modo(); });
   modo();
   ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const i = +b.dataset.d; F.dias.has(i) ? F.dias.delete(i) : F.dias.add(i); b.setAttribute('aria-pressed', String(F.dias.has(i))); });
@@ -1031,14 +1061,16 @@ function openEvent(id, ds, sMin, eMin) {
       save(); close(); toast(id ? 'Viaje actualizado' : 'Viaje guardado', id ? deshacer : null); render();
       return;
     }
-    const titulo = q('#evT').value.trim(), fecha = q('#evD').value, todoDia = q('#evAll').checked;
+    const ac = F.tipo === 'academia', asig = ac ? q('#evA').value : '';
+    const titulo = q('#evT').value.trim() || (ac ? `Academia${asig ? ' · ' + (subj(asig).s || subj(asig).n) : ''}` : ''), fecha = q('#evD').value, todoDia = q('#evAll').checked;
     const ini = q('#evI').value, fin = q('#evF').value;
     if (!titulo) return err('Ponle un nombre, por ejemplo "Entreno" o "Trabajo".');
     if (!fecha) return err('Elige el día.');
     if (!todoDia && (!ini || !fin)) return err('Indica la hora de inicio y de fin.');
     if (!todoDia && fin !== '00:00' && toMin(fin) <= toMin(ini)) return err('La hora de fin tiene que ser posterior a la de inicio.');
     const data = { titulo, tipo: F.tipo, fecha, todoDia, ini: todoDia ? '' : ini, fin: todoDia ? '' : fin,
-      trayecto: todoDia ? 0 : Number(q('#evTr').value), lugar: q('#evL').value.trim(), repite: null, excepciones: ev?.excepciones || [] };
+      trayecto: todoDia || (ac && F.modo !== 'otro') ? 0 : Number(q('#evTr').value), lugar: q('#evL').value.trim(), repite: null, excepciones: ev?.excepciones || [] };
+    if (ac) { data.asig = asig; data.modo = F.modo; }
     if (q('#evRep').checked) {
       if (!F.dias.size) return err('Elige al menos un día de la semana.');
       const hasta = q('#evH').value;
@@ -1415,11 +1447,13 @@ function dayPlan(ds) {
   const T = Number(R.trayecto), P = Number(R.prep);
   let sleep = toMin(R.dormir || '00:00'); if (sleep < 6 * 60) sleep += 1440;
   let wake;
-  // solo hay trayecto a la uni si ese día tienes algo allí (clase, examen o estudio en la uni)
-  const atUni = blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.uni);
+  // solo hay trayecto a la uni si ese día tienes algo allí (clase, examen, estudio en la uni o academia al lado)
+  const acadUni = eventsOn(ds).filter(x => x.ev.tipo === 'academia' && x.ev.modo === 'uni' && !x.ev.todoDia && !(X && (X.pausar || []).includes('academia')))
+    .map(x => ({ s: x.s, e: x.e, acad: true }));
+  const atUni = [...blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.uni), ...acadUni];
   if (atUni.length) {
     const first = Math.min(...atUni.map(b => b.s)), last = Math.max(...atUni.map(b => b.e));
-    blocks.push({ s: first - T, e: first, kind: 'trayecto', label: 'Ida a la uni' });
+    blocks.push({ s: first - T, e: first, kind: 'trayecto', label: atUni.every(b => b.acad) ? 'Ida a la academia' : 'Ida a la uni' });
     blocks.push({ s: last, e: last + T, kind: 'trayecto', label: 'Vuelta a casa' });
     // huecos largos entre clases: si el alumno vuelve a casa, son dos trayectos más
     const VC = Number(R.volverCasa) || 0;
@@ -1452,12 +1486,14 @@ function dayPlan(ds) {
   const entero = x => x.ev.todoDia || (x.s <= 0 && x.e >= 1440); // todo el día, o un día en medio de un viaje
   const allDay = evs.filter(entero);
   for (const x of evs.filter(x => !entero(x))) {
-    const Te = Number(x.ev.trayecto) || 0;
+    // la academia cerca de la uni va con el viaje a la uni, y la online es desde casa: sin trayecto propio
+    const Te = x.ev.tipo === 'academia' && x.ev.modo !== 'otro' ? 0 : Number(x.ev.trayecto) || 0;
     // día de salida o de vuelta de un viaje: ocupa desde que te vas hasta dormir, o desde levantarte hasta que vuelves
     const vj = x.ev.tipo === 'viaje' ? (x.s <= 0 ? 'vuelta' : x.e >= 1440 ? 'ida' : 'corto') : null;
     blocks.push({ s: x.s, e: vj === 'ida' ? Math.max(sleep, x.s + 15) : x.e, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo, viaje: vj,
       sub: vj === 'ida' ? ['Viaje', `te vas a las ${x.ev.ini}`, x.ev.lugar].filter(Boolean).join(' · ')
         : vj === 'vuelta' ? ['Viaje', `vuelves a las ${x.ev.fin}`, x.ev.lugar].filter(Boolean).join(' · ')
+        : x.ev.tipo === 'academia' ? ['Academia', subj(x.ev.asig)?.n, x.ev.modo === 'online' ? 'online' : 'presencial', x.ev.lugar].filter(Boolean).join(' · ')
         : [EV_NAME[x.ev.tipo], x.ev.lugar, x.ev.repite ? 'cada semana' : ''].filter(Boolean).join(' · ') });
     if (Te) {
       blocks.push({ s: x.s - Te, e: x.s, kind: 'trayecto', label: `Ida · ${x.ev.titulo}` });
