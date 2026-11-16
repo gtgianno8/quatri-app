@@ -282,7 +282,7 @@ function programarAvisos(force) {
   }, force ? 0 : 4000);
 }
 // solo en la copia de pruebas del ordenador: para revisar la lista de avisos sin enviarlos
-if (location.hostname === 'localhost') window.__quatri = { listaAvisos, setAvisos: a => { S.avisos = { ...avisosCfg(), ...a }; }, probar: (...a) => probarUsuarios(...a) };
+if (location.hostname === 'localhost') window.__quatri = { listaAvisos, setAvisos: a => { S.avisos = { ...avisosCfg(), ...a }; }, probar: (...a) => probarUsuarios(...a), dia: ds => dayPlan(ds) };
 
 /* ---------- prueba automática (solo en localhost) ----------
    Simula alumnos nuevos de distintas escuelas (grado, cursos, asignaturas, grupos, rutina, eventos)
@@ -1491,9 +1491,14 @@ function dayPlan(ds) {
   const info = dayInfo(ds);
   const blocks = [], skipped = [];
   if (info.lective) {
-    for (const s of mySessions()) {
+    const hoy = mySessions().filter(s => s.x[0] === info.clsWd && sesionHoy(s.x, ds, info));
+    // laboratorios que se turnan en el mismo hueco (EEBE: Cinemàtica en sus fechas, Resistència el resto de
+    // semanas B): si una sesión con fecha concreta coincide a la misma hora con otra semanal, ese día va la de la fecha
+    const conFecha = hoy.filter(s => s.x[8]);
+    const tapada = s => !s.x[8] && conFecha.some(t => t.code !== s.code && toMin(t.x[1]) < toMin(s.x[2]) && toMin(s.x[1]) < toMin(t.x[2]));
+    for (const s of hoy) {
       const x = s.x;
-      if (x[0] !== info.clsWd || !sesionHoy(x, ds, info)) continue;
+      if (tapada(s)) continue;
       const ck = clsKey(s), f = clsSkip(ds, ck);
       const base = { s: toMin(x[1]), e: toMin(x[2]), code: s.code, ck, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` };
       if (!f) { blocks.push({ ...base, kind: 'clase' }); continue; }
