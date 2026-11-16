@@ -13,6 +13,15 @@
                          "aprox":  false
                      },
                      {
+                         "id":  "390",
+                         "s":  "EEABB",
+                         "n":  "Escola d\u0027Enginyeria Agroalimentària i de Biosistemes de Barcelona",
+                         "ciudad":  "Castelldefels",
+                         "archivo":  "upc-390-2026-27-q1.json",
+                         "grados":  7,
+                         "aprox":  false
+                     },
+                     {
                          "id":  "295",
                          "s":  "EEBE",
                          "n":  "Escola d\u0027Enginyeria de Barcelona Est",
@@ -64,6 +73,15 @@
                          "ciudad":  "Terrassa",
                          "archivo":  "upc-205-2026-27-q1.json",
                          "grados":  11,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "210",
+                         "s":  "ETSAB",
+                         "n":  "Escola Tècnica Superior d\u0027Arquitectura de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-210-2026-27-q1.json",
+                         "grados":  1,
                          "aprox":  false
                      },
                      {

@@ -537,11 +537,27 @@ const CIUDAD_ILU = {
   'Sant Cugat del Vallès': `<path class="a" d="M70 128V66a50 50 0 0 1 100 0v62h-26V74a24 24 0 0 0-48 0v54z"/><rect class="b" x="110" y="20" width="20" height="30" rx="3"/>
     <circle class="c" cx="34" cy="100" r="24"/><rect class="d" x="31" y="112" width="6" height="18"/><circle class="c" cx="206" cy="96" r="22"/><rect class="d" x="203" y="108" width="6" height="20"/><circle class="y" cx="200" cy="30" r="13"/>`
 };
+// Cambiar de escuela o de grado con la app ya en marcha: lo de antes se guarda en S._antes hasta que acabes,
+// así puedes volver atrás en cualquier paso sin perder nada. La rutina, tus planes y el estudio hecho no se tocan nunca.
+function empezarCambio() {
+  if (S.listo && !S._antes) S._antes = { escuela: S.escuela, grado: S.grado, asignaturas: [...(S.asignaturas || [])], grupos: { ...(S.grupos || {}) }, grupoComun: S.grupoComun, mismo: S.mismo };
+}
+async function deshacerCambio() {
+  const a = S._antes; if (!a) return;
+  Object.assign(S, a); delete S._antes; S.listo = true; save();
+  try { if (D._id !== S.escuela) await loadEscuela(S.escuela); } catch {}
+  toast('Todo sigue como estaba'); go('ajustes');
+}
+const avisoCambio = () => S._antes ? `<div class="notice cambio"><span>Estás cambiando de ${S._antes.escuela !== S.escuela ? 'escuela' : 'grado'}. Hasta que guardes, tus clases de antes siguen ahí.</span>
+  <button type="button" class="btn small" id="deshacer">Dejarlo como estaba</button></div>` : '';
+const bindCambio = () => { const b = $('#deshacer'); if (b) b.onclick = deshacerCambio; };
+
 function viewGrado() {
   const v = $('#view'), ciudad = escInfo(D._id).ciudad;
   v.innerHTML = `
     <h1>¿Qué estudias?</h1>
-    <p class="lead">Elige tu escuela y tu grado, y cargamos tus clases, festivos y exámenes.</p>
+    <p class="lead">${S.listo ? 'Puedes mirar otras escuelas tranquilamente: no se cambia nada hasta que tocas un grado.' : 'Elige tu escuela y tu grado, y cargamos tus clases, festivos y exámenes.'}</p>
+    ${avisoCambio()}
     ${CIUDAD_ILU[ciudad] ? `<div class="escban"><svg class="ill" viewBox="0 0 240 160" aria-hidden="true">${CIUDAD_ILU[ciudad]}</svg>
       <div><b>${esc(escInfo(D._id).s)}</b><span>${esc(ciudad)}</span></div></div>` : ''}
     <label class="field"><span>Escuela (UPC)</span>
@@ -562,16 +578,31 @@ function viewGrado() {
   $('#escSel').onchange = async e => {
     const id = e.target.value;
     try { await loadEscuela(id); } catch { toast('No se han podido cargar los horarios de esa escuela.'); e.target.value = D._id; return; }
-    if (S.escuela !== id) { S.escuela = id; S.grado = null; S.asignaturas = []; S.grupos = {}; S.listo = false; save(); }
+    // con la app en marcha, solo mirar otra escuela no cambia nada: el cambio empieza al tocar un grado
+    if (!S.listo && S.escuela !== id) { S.escuela = id; S.grado = null; S.asignaturas = []; S.grupos = {}; save(); }
     viewGrado();
   };
   v.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
-    if (!S.escuela) S.escuela = D._id;
-    if (S.grado !== b.dataset.g) { S.grado = b.dataset.g; S.asignaturas = []; S.grupos = {}; S.listo = false; save(); }
+    const g = b.dataset.g;
+    if (S.listo && D._id === S.escuela && g === S.grado) { go('asignaturas'); return; } // mismo grado: solo revisar asignaturas
+    empezarCambio();
+    if (S.escuela !== D._id || S.grado !== g) {
+      S.escuela = D._id; S.grado = g;
+      // las asignaturas que también están en el nuevo grado se quedan marcadas, con su grupo
+      const enGrado = new Set(grado().a);
+      S.asignaturas = (S.asignaturas || []).filter(c => enGrado.has(c) && subj(c));
+      S.grupos = Object.fromEntries(Object.entries(S.grupos || {}).filter(([c]) => S.asignaturas.includes(c)));
+      S.listo = false; save();
+    }
     go('asignaturas');
   });
-  actions(`<button class="btn" id="back">Atrás</button><span class="info">Toca tu grado para seguir</span>`);
-  $('#back').onclick = () => go(S.listo ? 'ajustes' : 'bienvenida');
+  actions(`<button class="btn" id="back">${S._antes ? 'Cancelar' : 'Atrás'}</button><span class="info">Toca tu grado para seguir</span>`);
+  bindCambio();
+  $('#back').onclick = async () => {
+    if (S._antes) return deshacerCambio();
+    if (S.listo) { try { if (D._id !== S.escuela) await loadEscuela(S.escuela); } catch {} go('ajustes'); return; }
+    go('bienvenida');
+  };
 }
 
 /* ---------- 2. Asignaturas ---------- */
@@ -584,6 +615,7 @@ function viewAsignaturas() {
   v.innerHTML = `
     <h1>¿Qué asignaturas haces este cuatrimestre?</h1>
     <p class="lead">Marca un curso entero con un toque y luego añade o quita las que no encajen: repetidas, adelantadas u optativas.</p>
+    ${avisoCambio()}
     <input class="search" id="q" type="search" placeholder="Buscar asignatura" autocomplete="off">
     <div id="list"></div>`;
   const draw = () => {
@@ -635,6 +667,7 @@ function viewAsignaturas() {
     $('#next').onclick = () => go('grupos');
   };
   $('#q').oninput = draw;
+  bindCambio();
   draw(); bar();
 }
 
@@ -666,6 +699,7 @@ function viewGrupos() {
     v.innerHTML = `
       <h1>¿En qué grupos estás?</h1>
       <p class="lead">El grupo de teoría se pone solo según tu subgrupo: los que empiezan por 1 van con la teoría 1 y los que empiezan por 2, con la 2.</p>
+      ${avisoCambio()}
       <div class="toggle" role="group">
         <button data-m="1" aria-pressed="${S.mismo}">Mismo grupo en todas</button>
         <button data-m="0" aria-pressed="${!S.mismo}">Distinto en cada una</button>
@@ -689,6 +723,7 @@ function viewGrupos() {
         }).join('')}
         ${noSched.length ? `<div class="notice warn">Sin horario de clases en el visor: ${noSched.map(c => esc(subj(c).n)).join(', ')}. Las guardamos igualmente para el plan de estudio.</div>` : ''}
       </div>`;
+    bindCambio();
     v.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.mismo = b.dataset.m === '1'; save(); draw(); bar(); });
     v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => { applySame(b.dataset.id); draw(); bar(); });
     v.querySelectorAll('select[data-c]').forEach(s => s.onchange = () => { S.grupos[s.dataset.c] = s.value || null; save(); draw(); bar(); });
@@ -743,6 +778,7 @@ function viewSemana() {
   v.innerHTML = `
     <h1>Tu semana de clases</h1>
     <p class="lead">Las marcas A y B son laboratorios que solo tienes en semanas alternas. Toca un bloque para ver el detalle.</p>
+    ${avisoCambio()}
     <div class="stats">
       <div class="stat"><b>${S.asignaturas.length}</b><span>asignaturas</span></div>
       <div class="stat"><b>${num(Math.round(mins / 60 * 10) / 10)} h</b><span>de clase por semana (media)</span></div>
@@ -756,9 +792,17 @@ function viewSemana() {
     ${exams.length ? `<div class="card" style="margin-top:14px"><h2 class="card-t" style="margin-bottom:8px">Tus finales</h2>
       <div class="stack">${exams.map(({ c, e }) => { const d = new Date(e[1] + 'T12:00'); return `<div class="row" style="${colorVars(c)}"><span class="pill" style="font-family:var(--mono)">${DAYS_SHORT[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}</span><span>${esc(subj(c).n)}</span><span style="color:var(--muted);font-size:13px;font-family:var(--mono)">${e[2]}–${e[3]}</span></div>`; }).join('')}</div></div>` : ''}`;
   v.querySelectorAll('.blk').forEach(b => b.onclick = () => toast(b.title));
-  actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Siguiente'}</button>`);
+  bindCambio();
+  // si estabas cambiando de escuela o grado, aquí acaba: tu rutina y lo demás ya estaban
+  const cambio = !!S._antes;
+  actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo || cambio ? 'Guardar' : 'Siguiente'}</button>`);
   $('#back').onclick = () => go('grupos');
-  $('#next').onclick = () => { S.guardado = new Date().toISOString(); save(); if (S.listo) { toast('Horario guardado'); go('hoy'); } else go('rutina'); };
+  $('#next').onclick = () => {
+    S.guardado = new Date().toISOString();
+    if (cambio) { delete S._antes; S.listo = true; }
+    save();
+    if (S.listo) { toast(cambio ? 'Cambio guardado' : 'Horario guardado'); go('hoy'); } else go('rutina');
+  };
 }
 
 /* ---------- 5. Rutina ---------- */
@@ -834,7 +878,7 @@ function viewRutina() {
   $('#next').onclick = () => {
     read();
     if (S.listo) { toast('Rutina guardada'); go('hoy'); return; }
-    S.listo = true; save(); go('listo');
+    S.listo = true; delete S._antes; save(); go('listo');
   };
 }
 
@@ -2017,7 +2061,7 @@ function calWeek() {
       if (b.kind === 'evento') return `<div class="cblk evento" style="--ev:${evColor(b.tipo)};top:${top}px;height:${h}px" data-evid="${b.id}" data-ds="${ds}">
           <b>${esc(b.label.split(' ')[0].slice(0, 9))}</b>${h > 24 ? `<small>${fmt(b.s % 1440)}</small>` : ''}</div>`;
       if (b.kind === 'estudio' || b.kind === 'plan') return `<div class="cblk ${b.kind === 'plan' ? 'estudio plan' : 'estudio'}" style="${colorVars(b.code)};top:${top}px;height:${h}px" data-info="${esc(b.label)} · ${fmt(b.s)}–${fmt(b.e)} · ${esc(b.sub)}">
-          <b>${esc(subj(b.code).s)}</b>${h > 24 ? '<small>Estudio</small>' : ''}</div>`;
+          <b>${esc(subj(b.code).s)}</b>${h > 36 ? '<small>Estudio</small>' : ''}</div>`;
       if (b.kind === 'clase' || b.kind === 'examen') {
         const a = subj(b.code), ex = b.kind === 'examen';
         const tipo = ex ? 'EX' : (b.sub || '').charAt(0);
