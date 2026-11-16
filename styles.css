@@ -353,6 +353,8 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .asn small{color:var(--muted);font-size:13px}
 .asrow.off{opacity:.55}
 .est-cambiar{width:100%;margin-top:16px}
+[data-niv]{display:flex;flex-direction:column;align-items:center;gap:2px;padding-top:8px;padding-bottom:8px;height:auto}
+[data-niv] small{display:block;font-size:12.5px;font-weight:500;color:var(--muted)}
 /* temario */
 .tplan{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .tplan ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}

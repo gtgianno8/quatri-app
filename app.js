@@ -1945,6 +1945,8 @@ function classWeeks() {
 function nextExam(code, fromKey) {
   return examsOf(code).filter(e => e[1] >= fromKey).sort((a, b) => a[1].localeCompare(b[1]))[0] || null;
 }
+const CUESTA = [['cuesta', 'Me cuesta'], ['', 'Normal'], ['bien', 'La llevo bien']];
+const CUESTA_F = { cuesta: 1.35, bien: 0.7 };
 function weekPlan(monKey) {
   S.estudio = S.estudio || { nivel: {}, ajuste: {} };
   const E = S.estudio;
@@ -1963,16 +1965,21 @@ function weekPlan(monKey) {
     const oficial = (a.h || (a.cr || 0) * 15) / classWeeks();
     const ex = nextExam(c, monKey);
     const daysTo = ex ? Math.round((dparse(ex[1]) - mon) / 864e5) : null;
-    const urg = daysTo == null ? 1 : daysTo <= 14 ? 1.6 : daysTo <= 30 ? 1.25 : 1;
-    // más peso a la que tiene el examen más cerca
-    return { c, a, lv, oficial, ex, daysTo, need: null, w: oficial * urg };
+    // el examen pesa poco a poco: desde 6 semanas antes sube cada día, hasta +80 % (finales y parciales) o +40 % (controles y entregas)
+    const amp = ex && (ex[0] === 'final' || ex[0] === 'parcial') ? 0.8 : 0.4;
+    const urg = daysTo == null ? 1 : 1 + amp * Math.max(0, 1 - daysTo / 42);
+    // cómo la llevas: lo dice el alumno (me cuesta +35 %, la llevo bien -30 %)
+    const cu = (E.cuesta || {})[c], fc = CUESTA_F[cu] ?? 1;
+    return { c, a, lv, oficial, ex, daysTo, need: null, urg, cu, w: oficial * urg * fc };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
-  // lo ya hecho ocupó huecos libres, así que se suma al tiempo disponible
-  let sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.4), Math.round(oficialTotal * ritmo())));
+  // lo ya hecho ocupó huecos libres, así que se suma al tiempo disponible.
+  // Nunca más de una parte de tu tiempo libre, y esa parte depende de lo que elijas (poco 30 %, normal 40 %, mucho 55 %)
+  const rt = ritmo(), parte = rt <= 0.5 ? 0.3 : rt <= 0.7 ? 0.4 : 0.55;
+  let sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * parte), Math.round(oficialTotal * rt)));
   if (enEx) {
-    const need = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + (r.need ?? r.oficial * ritmo()), 0);
-    sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * 0.6), Math.round(need)));
+    const need = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + (r.need ?? r.oficial * rt), 0);
+    sugerido = Math.max(1, Math.min(Math.round((freeMin + estMin) / 60 * parte * 1.5), Math.round(need)));
   }
   // nunca más de lo que tú has dicho que quieres estudiar al día (2 h × 5 + 4 h × 2 = 18 h, por ejemplo)
   // (los días que estás fuera todo el día no cuentan)
@@ -2175,8 +2182,9 @@ function viewEstudio() {
     <div class="eday" style="margin-top:22px">Asignaturas</div>
     <div class="elist">${W.rows.map(r => `
       <button class="asrow${r.lv === 'no' ? ' off' : ''}" data-tem="${r.c}" style="${colorVars(r.c)}">
-        <span class="dot"></span><span class="asn"><b>${esc(r.a.n)}</b><small>${r.lv === 'no' ? (examsOf(r.c).length ? 'No la estudias' : 'Sin examen') : r.ex ? `${esc(exName(r.ex))} en ${r.daysTo} días` : 'Sin examen a la vista'}</small></span>
-        <span aria-hidden="true">›</span></button>`).join('')}</div>`;
+        <span class="dot"></span><span class="asn"><b>${esc(r.a.n)}</b><small>${r.lv === 'no' ? (examsOf(r.c).length ? 'No la estudias' : 'Sin examen') : r.manual ? 'Horas puestas por ti' : porQue(r) || 'Sin examen a la vista'}</small></span>
+        <span aria-hidden="true">›</span></button>`).join('')}</div>
+    <p class="hint" style="margin-top:8px">Toca una asignatura para decir cómo la llevas, ver sus horas o sus exámenes.</p>`;
   const rerender = () => { save(); const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); };
   v.querySelectorAll('[data-ck]').forEach(el => el.onclick = () => { const [ds, s, e, c, f] = el.dataset.ck.split(','); marcarHecho(ds, +s, +e, c, f); });
   v.querySelectorAll('[data-plan]').forEach(el => el.onclick = () => { const [ds, s, e, c, f] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, '', f); });
@@ -2202,15 +2210,32 @@ function openCuanto() {
   const m = S.estMax || {}, F = { n: nivelAct(), s: m.semana ?? 2, f: m.finde ?? 3 };
   const { q, close } = sheet(`
     <header><h2>Cuánto estudio</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
-    <div class="seg2" role="group" style="margin:0">${NIVELES.map(([f, t]) => `<button type="button" data-niv="${f}">${t}</button>`).join('')}</div>
+    <div class="seg2" role="group" style="margin:0">${NIVELES.map(([f, t]) => `<button type="button" data-niv="${f}">${t}<small data-nh="${f}"></small></button>`).join('')}</div>
+    <small class="hint" id="cHint"></small>
     <div class="adj-row"><span class="adj-n">Máximo al día<small>De lunes a viernes</small></span>
       <div class="stepper"><button type="button" data-st="s,-0.5" aria-label="Menos">−</button><output id="cS"></output><button type="button" data-st="s,0.5" aria-label="Más">+</button></div></div>
     <div class="adj-row"><span class="adj-n">Máximo al día<small>Sábado y domingo</small></span>
       <div class="stepper"><button type="button" data-st="f,-0.5" aria-label="Menos">−</button><output id="cF"></output><button type="button" data-st="f,0.5" aria-label="Más">+</button></div></div>
     <footer><span class="sp"></span><button type="submit" class="btn primary">Guardar</button></footer>`);
+  // horas que daría cada opción esta semana (con los máximos que tengas puestos en la ventana)
+  const prevista = () => {
+    const st = estStart(Math.max(0, S.estOff || 0)), old = { r: S.ritmo, m: S.estMax, o: S.estudio.objetivo };
+    delete S.estudio.objetivo; S.estMax = { semana: F.s, finde: F.f };
+    const out = NIVELES.map(([f]) => { S.ritmo = f; const W = weekPlan(st); return { f, h: W.sugerido, tope: W.tope }; });
+    if (old.r === undefined) delete S.ritmo; else S.ritmo = old.r;
+    if (old.m === undefined) delete S.estMax; else S.estMax = old.m;
+    if (old.o != null) S.estudio.objetivo = old.o;
+    PLAN_CACHE = {};
+    return out;
+  };
   const paint = () => {
     document.querySelectorAll('[data-niv]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.niv) === F.n)));
     q('#cS').textContent = hfmt(F.s); q('#cF').textContent = hfmt(F.f);
+    const P = prevista();
+    P.forEach(p => { const el = q(`[data-nh="${p.f}"]`); if (el) el.textContent = hfmt(p.h) + ' a la semana'; });
+    const igual = P[1].h === P[2].h || P[0].h === P[1].h;
+    q('#cHint').textContent = igual && P[2].h >= P[2].tope ? `Tu máximo al día no deja más de ${hfmt(P[2].tope)} a la semana: súbelo para estudiar más.`
+      : igual ? 'Esta semana tienes poco tiempo libre: casi no hay diferencia entre opciones.' : '';
   };
   document.querySelectorAll('[data-niv]').forEach(b => b.onclick = () => { F.n = Number(b.dataset.niv); paint(); });
   document.querySelectorAll('.sheet [data-st]').forEach(b => b.onclick = () => {
@@ -2221,6 +2246,7 @@ function openCuanto() {
     e.preventDefault();
     S.ritmo = F.n; delete S.estudio.objetivo;
     S.estMax = { semana: F.s, finde: F.f };
+    PLAN_CACHE = {};
     save(); close(); toast('Guardado'); render();
   };
 }
@@ -2240,6 +2266,14 @@ async function loadEval() {
   return EV;
 }
 
+// Por qué una asignatura tiene esas horas: créditos, cómo la llevas y lo cerca que está el examen
+function porQue(r) {
+  const p = [];
+  if (r.a.cr) p.push(`${num(r.a.cr)} créditos`);
+  if (r.cu === 'cuesta') p.push('te cuesta (+35 %)'); else if (r.cu === 'bien') p.push('la llevas bien (−30 %)');
+  if (r.ex) p.push(`${exName(r.ex).toLowerCase()} en ${r.daysTo} días${r.urg > 1.04 ? ` (+${Math.round((r.urg - 1) * 100)} %)` : ''}`);
+  return p.join(' · ');
+}
 function openTemario(code) { S.temCode = code; save(); go('temario'); }
 
 async function viewTemario() {
@@ -2259,7 +2293,9 @@ async function viewTemario() {
     <div class="tem-head" style="${colorVars(code)}"><span class="bar"></span><div>
       <div class="eyebrow">Asignatura</div><h1>${esc(a.n)}</h1></div></div>
     <div class="eday">Esta semana</div>
-    ${r && r.lv !== 'no' ? `<div class="adj-row"><span class="adj-n">Horas de estudio${r.manual ? '<small>Puestas por ti</small>' : '<small>Las calcula Quatri</small>'}</span>
+    ${r && r.lv !== 'no' ? `<div class="field" style="margin:0 0 6px"><span>¿Cómo la llevas?</span>
+        <div class="seg2" role="group" style="margin:0">${CUESTA.map(([k, t]) => `<button data-cu="${k}" aria-pressed="${(r.cu || '') === k}">${t}</button>`).join('')}</div></div>
+      <div class="adj-row"><span class="adj-n">Horas de estudio<small style="white-space:normal">${r.manual ? 'Puestas por ti' : porQue(r)}</small></span>
         <div class="stepper"><button data-m aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p aria-label="Más">+</button></div></div>
       <div class="row" style="gap:14px;flex-wrap:wrap">${r.manual ? '<button class="link" id="tAuto">Que lo calcule Quatri</button>' : ''}<button class="link" id="tNo">No la estudio</button></div>`
       : `<p class="hint" style="margin:0 0 6px">${examsOf(code).length ? 'No le pones horas de estudio.' : 'No tiene examen: no te ponemos horas de estudio.'}</p>
@@ -2276,6 +2312,10 @@ async function viewTemario() {
   const step = d => { E.ajuste = E.ajuste || {}; E.ajuste[code] = Math.max(0, Math.round((r.horas + d) * 2) / 2); rerender(); };
   if ($('[data-m]')) $('[data-m]').onclick = () => step(-0.5);
   if ($('[data-p]')) $('[data-p]').onclick = () => step(0.5);
+  v.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => {
+    E.cuesta = E.cuesta || {}; if (b.dataset.cu) E.cuesta[code] = b.dataset.cu; else delete E.cuesta[code];
+    PLAN_CACHE = {}; rerender();
+  });
   if ($('#tAuto')) $('#tAuto').onclick = () => { delete E.ajuste[code]; rerender(); };
   if ($('#tNo')) $('#tNo').onclick = () => { E.nivel = E.nivel || {}; E.nivel[code] = 'no'; delete (E.ajuste || {})[code]; rerender(); };
   if ($('#tSi')) $('#tSi').onclick = () => { E.nivel = E.nivel || {}; E.nivel[code] = 'si'; rerender(); };
