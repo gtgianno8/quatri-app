@@ -245,6 +245,15 @@ details.opt summary{cursor:pointer;color:var(--accent);font-weight:500;font-size
 .fd-scroll{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
 .fd-scroll::-webkit-scrollbar{display:none}
 .fd-item{position:relative;height:100dvh;height:100vh;height:100dvh;scroll-snap-align:start;scroll-snap-stop:always;background:var(--k);overflow:hidden}
+/* ilustración plana arriba de cada pantalla del scroll: se encoge (y desaparece) si la pantalla es baja */
+.fd-ill{position:absolute;left:50%;transform:translateX(-50%);top:calc(96px + env(safe-area-inset-top,0px));height:max(0px,min(230px,calc(100dvh - 520px)));width:auto;aspect-ratio:3/2;max-width:calc(100% - 44px)}
+.fd-ill .a,.ill .a{fill:rgb(255 255 255/.94)}.fd-ill .b,.ill .b{fill:rgb(255 255 255/.6)}.fd-ill .c,.ill .c{fill:rgb(255 255 255/.28)}.fd-ill .d,.ill .d{fill:rgb(0 0 0/.22)}.fd-ill .y,.ill .y{fill:#F6C64F}
+.fd-ill [class^="s"],.ill [class^="s"]{fill:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round}
+.fd-ill .sa,.ill .sa{stroke:rgb(255 255 255/.94)}.fd-ill .sb,.ill .sb{stroke:rgb(255 255 255/.6)}.fd-ill .sc,.ill .sc{stroke:rgb(255 255 255/.4)}.fd-ill .sd,.ill .sd{stroke:rgb(0 0 0/.24)}.fd-ill .sy,.ill .sy{stroke:#F6C64F}.fd-ill .sk,.ill .sk{stroke:var(--k)}
+.escban{display:flex;align-items:center;gap:14px;background:var(--accent);color:#fff;border-radius:20px;padding:12px 16px 12px 12px;margin:0 0 14px;--k:var(--accent)}
+.escban .ill{width:120px;height:80px;flex:none}
+.escban b{display:block;font-family:var(--display);font-size:22px;font-weight:900;letter-spacing:-.02em;line-height:1.05}
+.escban span{font-size:14px;font-weight:600;opacity:.9}
 .fd-body{position:absolute;left:22px;right:96px;bottom:calc(136px + env(safe-area-inset-bottom,0px))}
 .fd-when{margin:0;display:inline-block;background:rgb(0 0 0/.18);padding:6px 11px;border-radius:99px;font-size:13.5px;font-weight:800}
 .fd-item h2{font-size:clamp(40px,12vw,64px);font-weight:900;letter-spacing:-.035em;line-height:.95;margin:14px 0 0;text-wrap:balance;overflow-wrap:anywhere}
@@ -481,11 +490,12 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .tema.st-repasar{}
 .tema.st-viendo{}
 .sheet textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--surface);color:var(--fg);resize:vertical}
-.cblk.plan{opacity:.75;}
 ul.plain{margin:0;padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:4px}
 .notice.exrut{width:100%;text-align:left;background:var(--hi);color:var(--hi-fg);border:0;font-weight:600}
 .notice.exrut span{opacity:.75}
-.cblk.estudio{background:repeating-linear-gradient(135deg,var(--cb) 0 5px,color-mix(in srgb,var(--cb) 45%,var(--surface)) 5px 10px);color:#1E2530;z-index:2}
+/* estudio: misma asignatura que la clase, pero en contorno (la clase va rellena) */
+.cblk.estudio{background:var(--surface);box-shadow:inset 0 0 0 2px var(--c);color:var(--fg);z-index:2}
+.cblk.estudio small{color:var(--muted)}
 .seg2.three button{font-size:12.5px;line-height:1.15;padding:0 4px;height:42px}
 .rrow{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
 .rrow.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}

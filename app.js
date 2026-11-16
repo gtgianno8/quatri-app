@@ -523,11 +523,27 @@ function actions(html) {
 }
 
 /* ---------- 1. Grado ---------- */
+// Dibujo propio de la ciudad de cada campus (sin logos de la UPC: Quatri no es una app oficial)
+const CIUDAD_ILU = {
+  'Barcelona': `<path class="c" d="M0 128c30-8 50 8 80 0s50-8 80 0 50 8 80 0v32H0z"/><rect class="a" x="34" y="58" width="34" height="70" rx="3"/><rect class="b" x="74" y="34" width="26" height="94" rx="3"/>
+    <path class="a" d="M112 128V52l12-30 12 30v76z"/><rect class="b" x="146" y="70" width="40" height="58" rx="3"/><circle class="y" cx="206" cy="36" r="16"/><path class="sd" d="M40 74h22M40 92h22M40 110h22"/>`,
+  'Terrassa': `<rect class="b" x="40" y="20" width="16" height="100" rx="3"/><rect class="d" x="40" y="20" width="16" height="10"/><path class="a" d="M22 128V84l30-20 30 20 30-20 30 20 30-20 30 20v44z"/>
+    <path class="sd" d="M60 104h20M120 104h20M180 104h20"/><circle class="y" cx="200" cy="34" r="16"/><path class="sb" d="M52 10c10-6 20 6 30 0"/>`,
+  'Castelldefels': `<circle class="y" cx="190" cy="34" r="18"/><path class="a" d="M150 22l40 8-40 8-20 18-8-2 12-18-24-4-6 8h-6l4-12-4-12h6l6 8 24-4-12-18 8-2z" transform="translate(-90 6)"/>
+    <path class="c" d="M0 112c30-10 60 10 90 0s60-10 90 0 40 8 60 4v44H0z"/><path class="b" d="M150 112V80h10v-8h8v8h8v-8h8v8h10v32z"/><path class="a" d="M0 136h240v24H0z" opacity=".5"/>`,
+  'Manresa': `<path class="b" d="M0 128l26-52 14 20 18-44 16 30 14-40 18 36 14-24 20 44 16-18 24 48z"/><path class="a" d="M150 128V92h60v36z"/><path class="a" d="M162 92l18-20 18 20z"/><circle class="y" cx="206" cy="30" r="14"/>`,
+  'Vilanova i la Geltrú': `<path class="c" d="M0 118c30-10 60 10 90 0s60-10 90 0 40 8 60 4v38H0z"/><path class="a" d="M108 118l8-80h24l8 80z"/><rect class="d" x="112" y="66" width="32" height="10"/><rect class="y" x="116" y="24" width="24" height="16" rx="3"/>
+    <path class="sy" d="M100 30l-28-8M156 30l28-8"/><path class="b" d="M180 104l18-26v26zM188 104h30"/>`,
+  'Sant Cugat del Vallès': `<path class="a" d="M70 128V66a50 50 0 0 1 100 0v62h-26V74a24 24 0 0 0-48 0v54z"/><rect class="b" x="110" y="20" width="20" height="30" rx="3"/>
+    <circle class="c" cx="34" cy="100" r="24"/><rect class="d" x="31" y="112" width="6" height="18"/><circle class="c" cx="206" cy="96" r="22"/><rect class="d" x="203" y="108" width="6" height="20"/><circle class="y" cx="200" cy="30" r="13"/>`
+};
 function viewGrado() {
-  const v = $('#view');
+  const v = $('#view'), ciudad = escInfo(D._id).ciudad;
   v.innerHTML = `
     <h1>¿Qué estudias?</h1>
     <p class="lead">Elige tu escuela y tu grado, y cargamos tus clases, festivos y exámenes.</p>
+    ${CIUDAD_ILU[ciudad] ? `<div class="escban"><svg class="ill" viewBox="0 0 240 160" aria-hidden="true">${CIUDAD_ILU[ciudad]}</svg>
+      <div><b>${esc(escInfo(D._id).s)}</b><span>${esc(ciudad)}</span></div></div>` : ''}
     <label class="field"><span>Escuela (UPC)</span>
       <select id="escSel">${ESC.escuelas.map(e => `<option value="${esc(e.id)}" ${e.id === D._id ? 'selected' : ''}>${esc(e.s)} · ${esc(e.ciudad)}</option>`).join('')}</select>
       <small>${esc(escInfo(D._id).n)}</small>
@@ -1188,7 +1204,9 @@ function openPlan(ds, s, e, code, tema, fijoId) {
         <label class="field"><span>Día</span><select id="pD">${dias.map(k => { const x = dparse(k); return `<option value="${k}" ${k === ds ? 'selected' : ''}>${k === today ? 'Hoy' : DAYS[wdOf(x)]} ${x.getDate()}</option>`; }).join('')}</select></label>
         <label class="field"><span>Empieza</span><input type="time" id="pI" step="300" value="${fmt(s % 1440)}"></label>
       </div>
-      <small class="hint">Dura ${dur(len)}. El resto de tu estudio se recoloca solo: si cambias de asignatura, las horas de la otra van a otro hueco.</small>
+      <div class="adj-row"><span class="adj-n">Duración<small id="pFin"></small></span>
+        <div class="stepper"><button type="button" data-dl="-15" aria-label="Acortar 15 minutos">−</button><output id="pL"></output><button type="button" data-dl="15" aria-label="Alargar 15 minutos">+</button></div></div>
+      <small class="hint">El resto de tu estudio se recoloca solo: si lo alargas, a otros días les toca algo menos; si cambias de asignatura, las horas de la otra van a otro hueco.</small>
       <p class="err" id="pErr" hidden></p>
     </div>
     <footer>
@@ -1199,6 +1217,16 @@ function openPlan(ds, s, e, code, tema, fijoId) {
       <button type="button" class="btn primary" id="pDone">${ico('check')} Hecho</button>
     </footer>`);
   const quitarFijo = () => { if (fijoId && S.estFijo) delete S.estFijo[fijoId]; };
+  // duración: de 15 en 15 min, entre 30 min y 4 h
+  let dl = len;
+  const pintaDl = () => {
+    q('#pL').textContent = dur(dl);
+    const i = q('#pI').value; q('#pFin').textContent = i ? `Hasta las ${fmt((toMin(i) + dl) % 1440)}` : '';
+    q('[data-dl="-15"]').disabled = dl <= 30; q('[data-dl="15"]').disabled = dl >= 240;
+  };
+  q('#pMove').querySelectorAll('[data-dl]').forEach(b => b.onclick = () => { dl = Math.min(240, Math.max(30, dl + Number(b.dataset.dl))); pintaDl(); });
+  q('#pI').oninput = pintaDl;
+  pintaDl();
   q('#pDone').onclick = () => { close(); marcarHecho(ds, s, e, code, fijoId); };
   q('#pCancel').onclick = () => {
     q('#pMove').hidden = true; q('#pErr').hidden = true; q('#pMv').textContent = 'Cambiar'; q('#pMv').classList.remove('primary');
@@ -1230,7 +1258,7 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     const nd = q('#pD').value, ni = q('#pI').value, nc = q('#pA').value || code;
     const err = m => { q('#pErr').textContent = m; q('#pErr').hidden = false; };
     if (!ni) return err('Elige la hora.');
-    const ns = toMin(ni), ne = ns + len;
+    const ns = toMin(ni), ne = ns + dl;
     // no puede pisar clases, comidas, eventos ni otros bloques tuyos
     const p = dayPlan(nd);
     const choque = p.blocks.find(b => b.kind !== 'noche' && b.s < ne && ns < b.e);
@@ -1240,9 +1268,10 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     if (ne > p.sleep) return err('Acabaría después de tu hora de dormir.');
     S.estFijo = S.estFijo || {};
     if (nc !== code && examsOf(nc).some(x => x[1] === nd && x[0] !== 'entrega')) return err(`Ese día tienes el examen de ${subj(nc).n}.`);
-    if (nd === ds && ns === s && nc === code) { close(); return; }
+    if (nd === ds && ns === s && ne === e && nc === code) { close(); return; }
     S.estFijo[fijoId || newId()] = { ds: nd, s: ns, e: ne, code: nc, t: '' };
-    save(); close(); toast(nc !== code ? `Ahora estudias ${subj(nc).n}` : 'Bloque movido'); render();
+    save(); close();
+    toast(nc !== code ? `Ahora estudias ${subj(nc).n}` : nd === ds && ns === s ? (dl > len ? `Alargado a ${dur(dl)}` : `Acortado a ${dur(dl)}`) : 'Bloque movido'); render();
   };
 }
 function openDone(id) {
@@ -1724,6 +1753,49 @@ function viewHoy() {
 }
 
 // El día a pantalla completa: una cosa por pantalla, en su color; se desliza hacia arriba para pasar a la siguiente.
+// Ilustraciones planas del scroll del día. Solo blanco y negro con transparencia (más un amarillo),
+// para que encajen sobre el color de cualquier bloque. Clases: a=blanco fuerte, b=blanco medio, c=blanco suave, d=sombra, y=amarillo
+const ILU = {
+  clase: `<rect class="d" x="40" y="14" width="160" height="80" rx="8"/><path class="sb" d="M60 38h70M60 56h110M60 72h46"/><rect class="y" x="150" y="76" width="30" height="6" rx="3"/>
+    <rect class="c" x="22" y="128" width="58" height="12" rx="4"/><rect class="c" x="91" y="128" width="58" height="12" rx="4"/><rect class="c" x="160" y="128" width="58" height="12" rx="4"/>
+    <circle class="a" cx="51" cy="114" r="11"/><circle class="a" cx="120" cy="114" r="11"/><circle class="a" cx="189" cy="114" r="11"/>`,
+  examen: `<rect class="a" x="62" y="10" width="104" height="134" rx="8" transform="rotate(-6 114 77)"/><path class="sd" d="M82 42h56M84 62h50M86 82h56M88 102h36" transform="rotate(-6 114 77)"/>
+    <circle class="y" cx="176" cy="112" r="26"/><path class="sd" d="M176 96v16l10 7" />`,
+  estudio: `<path class="a" d="M48 126 L120 110 L192 126 L192 64 L120 48 L48 64 Z"/><path class="sk" d="M120 48v62"/><path class="sc" d="M62 76l42-9M62 90l42-9M62 104l42-9M136 67l42 9M136 81l42 9"/>
+    <g transform="rotate(40 196 40)"><rect class="y" x="188" y="2" width="16" height="62" rx="3"/><path class="a" d="M188 64h16l-8 16z"/><rect class="d" x="188" y="2" width="16" height="10" rx="3"/></g>
+    <rect class="d" x="28" y="134" width="184" height="10" rx="5"/>`,
+  trayecto: `<circle class="y" cx="196" cy="30" r="17"/><rect class="a" x="22" y="58" width="180" height="60" rx="16"/><rect class="d" x="38" y="72" width="30" height="22" rx="4"/><rect class="d" x="78" y="72" width="30" height="22" rx="4"/>
+    <rect class="d" x="118" y="72" width="30" height="22" rx="4"/><rect class="d" x="158" y="72" width="30" height="22" rx="4"/><rect class="c" x="22" y="102" width="180" height="6"/>
+    <path class="sd" d="M0 138h240"/><circle class="d" cx="58" cy="126" r="8"/><circle class="d" cx="168" cy="126" r="8"/>`,
+  despertar: `<path class="y" d="M70 112a50 50 0 0 1 100 0z"/><path class="sy" d="M120 34v-18M74 52l-12-12M166 52l12-12M50 92H32M190 92h18"/><rect class="a" x="20" y="112" width="200" height="10" rx="5"/>
+    <path class="c" d="M76 140h88a10 10 0 0 0 10-10H66a10 10 0 0 0 10 10z"/>`,
+  comida: `<ellipse class="c" cx="120" cy="100" rx="78" ry="40"/><ellipse class="a" cx="120" cy="96" rx="58" ry="28"/><ellipse class="y" cx="104" cy="92" rx="18" ry="10"/><circle class="d" cx="134" cy="96" r="9"/><circle class="d" cx="150" cy="88" r="6"/>
+    <path class="sa" d="M24 50v80M18 50v22a6 6 0 0 0 12 0V50M214 50c-12 10-12 34 0 40v40"/>`,
+  merienda: `<rect class="a" x="56" y="58" width="76" height="72" rx="10"/><path class="sa" d="M132 74h10a14 14 0 0 1 0 28h-10"/><path class="sb" d="M80 22c-8 10 8 16 0 26M104 22c-8 10 8 16 0 26"/>
+    <path class="y" d="M156 112c0-22 56-22 56 0z"/><rect class="c" x="156" y="112" width="56" height="18" rx="4"/><rect class="d" x="40" y="136" width="180" height="8" rx="4"/>`,
+  descanso: `<rect class="a" x="72" y="62" width="80" height="70" rx="12"/><path class="sa" d="M152 78h10a16 16 0 0 1 0 32h-10"/><rect class="y" x="72" y="84" width="80" height="12"/>
+    <path class="sb" d="M96 22c-8 10 8 16 0 28M128 22c-8 10 8 16 0 28"/><ellipse class="c" cx="118" cy="140" rx="70" ry="9"/>`,
+  cena: `<path class="y" d="M200 18a24 24 0 1 0 22 32 20 20 0 0 1-22-32z"/><circle class="a" cx="40" cy="30" r="3"/><circle class="b" cx="76" cy="16" r="2.5"/><circle class="b" cx="160" cy="22" r="2.5"/>
+    <ellipse class="c" cx="120" cy="112" rx="78" ry="34"/><ellipse class="a" cx="120" cy="108" rx="56" ry="22"/><ellipse class="d" cx="120" cy="106" rx="30" ry="10"/>`,
+  libre: `<circle class="y" cx="184" cy="40" r="24"/><path class="c" d="M0 126c40-26 80-26 120-6s80 20 120-4v44H0z"/><path class="a" d="M86 18l30 26-30 38-30-38z"/><path class="d" d="M86 18v64L56 44z"/>
+    <path class="sb" d="M86 82c-6 16 14 22 4 40"/><path class="y" d="M84 96l12 4-10 6zM88 112l12 2-11 8z"/>`,
+  noche: `<path class="y" d="M182 20a30 30 0 1 0 30 42 26 26 0 0 1-30-42z"/><circle class="a" cx="40" cy="34" r="3"/><circle class="b" cx="80" cy="20" r="2.5"/><circle class="b" cx="120" cy="44" r="2"/>
+    <rect class="a" x="36" y="96" width="168" height="40" rx="14"/><rect class="c" x="24" y="84" width="32" height="56" rx="12"/><rect class="c" x="184" y="84" width="32" height="56" rx="12"/><rect class="d" x="60" y="104" width="56" height="16" rx="6"/>`,
+  academia: `<rect class="d" x="56" y="16" width="128" height="74" rx="8"/><path class="sy" d="M76 40h40M76 60h70"/><circle class="a" cx="120" cy="116" r="16"/><path class="a" d="M88 150a32 26 0 0 1 64 0z"/><rect class="c" x="30" y="140" width="180" height="10" rx="5"/>`,
+  viaje: `<rect class="a" x="62" y="50" width="116" height="86" rx="12"/><path class="sa" d="M98 50V34h44v16"/><rect class="y" x="62" y="80" width="116" height="10"/><circle class="d" cx="84" cy="142" r="7"/><circle class="d" cx="156" cy="142" r="7"/>`,
+  evento: `<rect class="a" x="56" y="30" width="128" height="110" rx="12"/><rect class="d" x="56" y="30" width="128" height="30" rx="12"/><path class="sa" d="M86 20v20M154 20v20"/>
+    <path class="y" d="M120 74l9 18 20 3-14 14 3 20-18-9-18 9 3-20-14-14 20-3z"/>`
+};
+function iluOf(it) {
+  if (it.kind === 'plan' || it.kind === 'estudio') return 'estudio';
+  if (it.kind === 'libre') return it.noche ? 'noche' : 'libre';
+  if (it.kind === 'rutina') return { despertar: 'despertar', comida: 'comida', merienda: 'merienda', descanso: 'descanso', cena: 'cena' }[it.rk] || 'descanso';
+  if (it.kind === 'evento') return it.tipo === 'academia' ? 'academia' : it.tipo === 'viaje' ? 'viaje' : 'evento';
+  if (it.kind === 'noche') return 'noche';
+  return ILU[it.kind] ? it.kind : 'evento';
+}
+const iluSvg = (n, cls = 'fd-ill') => `<svg class="${cls}" viewBox="0 0 240 160" aria-hidden="true">${ILU[n] || ''}</svg>`;
+
 function openFeed(ds, start = 0) {
   const p = dayView(ds), vivos = dayItems(p).filter(it => it.kind !== 'saltada');
   if (!vivos.length) return;
@@ -1738,6 +1810,7 @@ function openFeed(ds, start = 0) {
     <div class="fd-scroll">${vivos.map((it, i) => {
       const A = itemActions(it, ds), sub = itemSub(it), on = nm >= it.s && nm < it.e;
       return `<section class="fd-item" style="--k:${kindColor(it)}" data-i="${i}">
+        ${iluSvg(iluOf(it))}
         <div class="fd-body">
           <p class="fd-when">${on ? 'Ahora · ' : ''}${fmt(it.s % 1440)}–${fmt(it.e % 1440)} · ${dur(it.e - it.s)}</p>
           <h2>${esc(itemLabel(it))}</h2>
@@ -1974,7 +2047,7 @@ function calWeek() {
       <div class="cgrid chead-row"><div></div>${heads}</div>
       <div class="cgrid cbody"><div class="chours" style="height:${H}px">${hours}</div>${cols}${nowLine}</div>
     </div>
-    <p class="hint" style="margin-top:10px">En verde, tus huecos libres de al menos 30 min. Toca un bloque para ver el detalle o un día para abrirlo.</p>`;
+    <p class="hint" style="margin-top:10px">Las clases van rellenas de color; el estudio, con el borde del color de su asignatura. En verde, tus huecos libres de al menos 30 min. Toca un bloque para ver el detalle o un día para abrirlo.</p>`;
 }
 
 function calMonth() {
