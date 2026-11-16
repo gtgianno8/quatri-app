@@ -795,7 +795,7 @@ function viewRutina() {
       <section class="card stack"><h2 class="card-t">La noche</h2>
         <div class="fields">${time('dormir', 'Te vas a dormir a las', R.dormir)}</div>
         <label class="check"><input type="checkbox" id="estudiaNoche" ${R.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
-        <small class="hint">Si no lo marcas, de la cena a la hora de dormir no cuenta como tiempo libre para estudiar.</small>
+        <small class="hint">Si no lo marcas, de la cena a la hora de dormir es tiempo libre para ti: no te ponemos estudio ahí.</small>
       </section>
     </div>`;
   const read = () => {
@@ -1532,13 +1532,21 @@ function dayPlan(ds) {
   // la merienda va antes de la cena, así que si no cabe cerca de su hora ese día se salta
   if (!O.merienda && R.merienda) place(toMin(R.meriendaHora), 30, RUT_LABEL.merienda, 'rutina', 90, 'merienda');
   const cen = O.cena ? fx.cena : place(toMin(R.cena), Number(R.cenaDur), RUT_LABEL.cena, 'rutina', Infinity, 'cena');
-  if (cen && !R.estudiaNoche && cen.e < sleep) blocks.push({ s: cen.e, e: sleep, kind: 'noche', label: 'Desconexión', sub: 'Después de cenar no cuenta para estudiar' });
+  // si no estudias después de cenar, ese rato es tiempo libre de verdad, pero Quatri no te pone estudio ahí (noche: true)
+  const noche = cen && !R.estudiaNoche ? cen.e : Infinity;
   blocks.sort((a, b) => a.s - b.s || a.e - b.e);
-  // huecos libres entre levantarte y dormir
-  const free = []; let t = wake;
-  for (const b of blocks) { if (b.s - t >= 15) free.push({ s: t, e: b.s, kind: 'libre' }); t = Math.max(t, b.e); }
-  if (sleep - t >= 15) free.push({ s: t, e: sleep, kind: 'libre' });
+  // huecos libres entre levantarte y dormir (partidos a la hora de acabar de cenar)
+  const free = [];
+  const addFree = (s, e) => {
+    if (e - s < 15) return;
+    if (s < noche && noche < e) { if (noche - s >= 15) free.push({ s, e: noche, kind: 'libre' }); if (e - noche >= 15) free.push({ s: noche, e, kind: 'libre', noche: true }); }
+    else free.push({ s, e, kind: 'libre', noche: s >= noche });
+  };
+  let t = wake;
+  for (const b of blocks) { if (b.s > t) addFree(t, b.s); t = Math.max(t, b.e); }
+  if (sleep > t) addFree(t, sleep);
   return { info, blocks, free, skipped, wake, sleep, allDay, exRut: !!X, freeMin: free.reduce((n, f) => n + f.e - f.s, 0),
+    freeEstMin: free.filter(f => !f.noche).reduce((n, f) => n + f.e - f.s, 0),
     classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
 }
 
@@ -1571,7 +1579,7 @@ const dotStyle = it => it.code ? colorVars(it.code) : `--c:${kindColor(it)}`;
 const itemLabel = it => it.kind === 'libre' ? 'Libre' : it.kind === 'saltada' ? `No vas · ${it.label}` : it.label;
 function itemSub(it) {
   if (it.kind === 'saltada') return `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}`;
-  if (it.kind === 'libre') return it.skip ? `En vez de ${it.skip.label} · toca para cambiarlo` : 'Toca para añadir algo aquí';
+  if (it.kind === 'libre') return it.skip ? `En vez de ${it.skip.label} · toca para cambiarlo` : it.noche ? 'Después de cenar · aquí no te ponemos estudio' : 'Toca para añadir algo aquí';
   return [it.sub, it.mod ? 'cambiado solo este día' : ''].filter(Boolean).join(' · ');
 }
 // qué puedes hacer con cada bloque (en la tarjeta de ahora y en el día a pantalla completa)
@@ -2075,7 +2083,8 @@ function weekPlan(monKey) {
   const E = S.estudio;
   const mon = dparse(monKey);
   const days = [0, 1, 2, 3, 4, 5, 6].map(i => dayPlan(dkey(addDays(mon, i))));
-  const freeMin = days.reduce((n, p) => n + p.freeMin, 0);
+  // para estudiar solo cuenta el libre de antes de cenar (si no estudias por la noche)
+  const freeMin = days.reduce((n, p) => n + (p.freeEstMin ?? p.freeMin), 0);
   // estudio ya hecho (marcado): cuenta como horas de estudio de esa asignatura.
   // El que haces en la hora de una clase a la que no vas NO cuenta: sustituye a la clase, no al estudio de después.
   const hecho = {};
@@ -2149,7 +2158,7 @@ function weekSchedule(monKey) {
     // huecos libres, sin los ratos que has saltado
     // 15 min de margen al llegar de un trayecto (no te pones a estudiar nada más cruzar la puerta)
     // (y 30 min al volver de un viaje)
-    let gaps = d.p.free.map(f => ({ s: f.s + (d.p.blocks.some(b => b.viaje === 'vuelta' && b.e === f.s) ? 30 : d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
+    let gaps = d.p.free.filter(f => !f.noche).map(f => ({ s: f.s + (d.p.blocks.some(b => b.viaje === 'vuelta' && b.e === f.s) ? 30 : d.p.blocks.some(b => b.kind === 'trayecto' && b.e === f.s) ? 15 : 0), e: f.e }));
     for (const k of skips[d.ds] || []) gaps = gaps.flatMap(g => g.e <= k.s || g.s >= k.e ? [g] : [{ s: g.s, e: k.s }, { s: k.e, e: g.e }]);
     d.gaps = gaps.filter(g => g.e - g.s >= 30);
     // el tope del día descuenta el estudio ya hecho (no el que haces en vez de una clase)
@@ -2234,7 +2243,9 @@ function dayView(ds) {
   let free = p.free.map(f => ({ ...f }));
   for (const b of plan) free = free.flatMap(f => f.e <= b.s || f.s >= b.e ? [f] : [{ ...f, e: b.s }, { ...f, s: b.e }]);
   free = free.filter(f => f.e - f.s >= 15);
-  return { ...p, blocks: [...p.blocks, ...plan].sort((a, b) => a.s - b.s), free, plan, planMin: plan.reduce((n, b) => n + b.e - b.s, 0) };
+  // "libres de verdad" = la suma de los ratos libres que se ven (ya sin el estudio que propone Quatri)
+  return { ...p, blocks: [...p.blocks, ...plan].sort((a, b) => a.s - b.s), free, plan, planMin: plan.reduce((n, b) => n + b.e - b.s, 0),
+    freeMin: free.reduce((n, f) => n + f.e - f.s, 0) };
 }
 
 // Estudio por días: lo que toca estudiar cada día de la semana, con su hora; se marca como hecho tocando el círculo.
