@@ -152,7 +152,7 @@ function askWhich(data) {
 function openLogin() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), app = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const { q, close } = sheet(`
-    <header><h2>Entrar en Quatri</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <header><h2>Entrar en Quatri</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
     <p style="margin:0">Guarda tu quatri en tu cuenta y tenlo igual en el móvil y en el ordenador.</p>
     <button type="button" class="btn gbtn primary-g" id="lG"><span class="g" aria-hidden="true">G</span>Continuar con Google</button>
     <div class="or"><span>o con tu correo</span></div>
@@ -526,7 +526,6 @@ function actions(html) {
 function viewGrado() {
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 1 de 5</div>
     <h1>¿Qué estudias?</h1>
     <p class="lead">Elige tu escuela y tu grado, y cargamos tus clases, festivos y exámenes.</p>
     <label class="field"><span>Escuela (UPC)</span>
@@ -567,7 +566,6 @@ function viewAsignaturas() {
   for (const code of g.a) { const a = subj(code); (byCurso[a.c] = byCurso[a.c] || []).push(code); }
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 2 de 5</div>
     <h1>¿Qué asignaturas haces este cuatrimestre?</h1>
     <p class="lead">Marca un curso entero con un toque y luego añade o quita las que no encajen: repetidas, adelantadas u optativas.</p>
     <input class="search" id="q" type="search" placeholder="Buscar asignatura" autocomplete="off">
@@ -650,7 +648,6 @@ function viewGrupos() {
   const draw = () => {
     const missing = codes.filter(c => !S.grupos[c] || !options(c).includes(S.grupos[c]));
     v.innerHTML = `
-      <div class="eyebrow">Paso 3 de 5</div>
       <h1>¿En qué grupos estás?</h1>
       <p class="lead">El grupo de teoría se pone solo según tu subgrupo: los que empiezan por 1 van con la teoría 1 y los que empiezan por 2, con la 2.</p>
       <div class="toggle" role="group">
@@ -658,7 +655,7 @@ function viewGrupos() {
         <button data-m="0" aria-pressed="${!S.mismo}">Distinto en cada una</button>
       </div>
       ${S.mismo ? `<div class="card stack">
-          <div class="eyebrow">Tu subgrupo</div>
+          <h2 class="card-t">Tu subgrupo</h2>
           <div class="gchips">${allIds.map(id => `<button class="gchip" data-id="${esc(id)}" aria-pressed="${S.grupoComun === id}">${esc(id)}</button>`).join('')}</div>
         </div>` : ''}
       <div class="stack" style="margin-top:14px">
@@ -728,7 +725,6 @@ function viewSemana() {
   const exams = S.asignaturas.flatMap(c => subj(c).e.map(e => ({ c, e }))).filter(o => o.e[0] === 'final').sort((a, b) => a.e[1].localeCompare(b.e[1]));
   const v = $('#view');
   v.innerHTML = `
-    <div class="eyebrow">Paso 4 de 5</div>
     <h1>Tu semana de clases</h1>
     <p class="lead">Las marcas A y B son laboratorios que solo tienes en semanas alternas. Toca un bloque para ver el detalle.</p>
     <div class="stats">
@@ -741,7 +737,7 @@ function viewSemana() {
       : `<div class="notice good" style="margin-top:14px">Ninguna clase se pisa.</div>`}
     <div class="legend">${S.asignaturas.filter(hasSchedule).map(c => `<span style="${colorVars(c)}"><i></i>${esc(subj(c).s)} · ${esc(subj(c).n)}</span>`).join('')}</div>
     ${weekGrid(list, clashSet)}
-    ${exams.length ? `<div class="card" style="margin-top:14px"><div class="eyebrow" style="margin-bottom:8px">Tus finales</div>
+    ${exams.length ? `<div class="card" style="margin-top:14px"><h2 class="card-t" style="margin-bottom:8px">Tus finales</h2>
       <div class="stack">${exams.map(({ c, e }) => { const d = new Date(e[1] + 'T12:00'); return `<div class="row" style="${colorVars(c)}"><span class="pill" style="font-family:var(--mono)">${DAYS_SHORT[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}</span><span>${esc(subj(c).n)}</span><span style="color:var(--muted);font-size:13px;font-family:var(--mono)">${e[2]}–${e[3]}</span></div>`; }).join('')}</div></div>` : ''}`;
   v.querySelectorAll('.blk').forEach(b => b.onclick = () => toast(b.title));
   actions(`<button class="btn" id="back">Atrás</button><span class="info"></span><button class="btn primary" id="next">${S.listo ? 'Guardar' : 'Siguiente'}</button>`);
@@ -757,11 +753,10 @@ function viewRutina() {
     <select id="${id}">${vals.map(m => `<option value="${m}" ${m === val ? 'selected' : ''}>${m === 0 ? 'Sin descanso' : dur(m)}</option>`).join('')}</select>${hint ? `<small>${hint}</small>` : ''}</label>`;
   const time = (id, label, val, hint = '') => `<label class="field"><span>${label}</span><input type="time" id="${id}" value="${val}" step="300">${hint ? `<small>${hint}</small>` : ''}</label>`;
   v.innerHTML = `
-    <div class="eyebrow">Paso 5 de 5</div>
     <h1>Tu día a día</h1>
     <p class="lead">Con esto calculamos tus horas libres de verdad, no solo los huecos entre clases. Son valores aproximados: los podrás cambiar cuando quieras.</p>
     <div class="stack">
-      <section class="card stack"><div class="eyebrow">Ir a la uni</div>
+      <section class="card stack"><h2 class="card-t">Ir a la uni</h2>
         <div class="fields">
           ${mins('trayecto', '¿Cuánto tardas en llegar?', [5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120], R.trayecto, 'Lo mismo a la vuelta.')}
           <label class="field"><span>Si tienes un hueco largo entre clases</span>
@@ -771,14 +766,14 @@ function viewRutina() {
           ${mins('prep', 'Levantarte, prepararte y desayunar', [15, 30, 45, 60, 75, 90], R.prep)}
           ${time('despertarLibre', 'Días sin clase te levantas a las', R.despertarLibre)}
         </div></section>
-      <section class="card stack"><div class="eyebrow">Academia</div>
+      <section class="card stack"><h2 class="card-t">Academia</h2>
         <p class="hint" style="margin:0">¿Vas a academia? Añade tus clases: si es cerca de la uni, va con tu viaje a la uni (sin otra ida y vuelta).</p>
         ${Object.entries(S.eventos || {}).filter(([, e]) => e.tipo === 'academia').map(([id, e]) => `
           <button class="asrow" data-acad="${id}" style="--c:${evColor('academia')}"><span class="dot"></span><span class="asn"><b>${esc(e.titulo)}</b>
-            <small>${e.repite ? e.repite.dias.map(i => DAYS_SHORT[i]).join(', ') : e.fecha} · ${e.ini}–${e.fin} · ${(ACAD_MODOS.find(m => m[0] === e.modo) || ACAD_MODOS[0])[1].toLowerCase()}</small></span><span aria-hidden="true">›</span></button>`).join('')}
+            <small>${e.repite ? e.repite.dias.map(i => DAYS_SHORT[i]).join(', ') : e.fecha} · ${e.ini}–${e.fin} · ${(ACAD_MODOS.find(m => m[0] === e.modo) || ACAD_MODOS[0])[1].toLowerCase()}</small></span>${ico('right')}</button>`).join('')}
         <button class="btn" id="addAcad" type="button">+ Añadir clase de academia</button>
       </section>
-      <section class="card stack"><div class="eyebrow">Comidas y descansos</div>
+      <section class="card stack"><h2 class="card-t">Comidas y descansos</h2>
         <div class="fields">
           ${time('comida', 'Sueles comer a las', R.comida, 'Si a esa hora estás en clase o volviendo, se mueve a cuando llegues.')}
           ${mins('comidaDur', 'La comida te lleva', [15, 30, 45, 60], R.comidaDur)}
@@ -789,7 +784,7 @@ function viewRutina() {
         <label class="check"><input type="checkbox" id="merienda" ${R.merienda ? 'checked' : ''}> Merienda o pausa por la tarde (30 min)</label>
         <div class="fields" id="mBox" ${R.merienda ? '' : 'hidden'}>${time('meriendaHora', 'Hacia las', R.meriendaHora)}</div>
       </section>
-      <section class="card stack"><div class="eyebrow">Estudio</div>
+      <section class="card stack"><h2 class="card-t">Estudio</h2>
         <div class="fields">
           <label class="field"><span>Un día normal te ves estudiando</span><select id="estS">${[1, 1.5, 2, 3, 4].map(h => `<option value="${h}" ${(S.estMax?.semana ?? 2) === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>
           <label class="field"><span>Un día de fin de semana</span><select id="estF">${[0, 1, 2, 3, 4, 5].map(h => `<option value="${h}" ${(S.estMax?.finde ?? 3) === h ? 'selected' : ''}>${h ? hfmt(h) : 'Nada'}</option>`).join('')}</select></label>
@@ -797,7 +792,7 @@ function viewRutina() {
             .map(([k, t]) => `<option value="${k}" ${(S.estPref || 'libre') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         </div>
         <small class="hint">Quatri te propone el estudio en tus huecos libres a esas horas, sin pasar de esto al día (en exámenes, más). Siempre lo puedes mover.</small></section>
-      <section class="card stack"><div class="eyebrow">La noche</div>
+      <section class="card stack"><h2 class="card-t">La noche</h2>
         <div class="fields">${time('dormir', 'Te vas a dormir a las', R.dormir)}</div>
         <label class="check"><input type="checkbox" id="estudiaNoche" ${R.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
         <small class="hint">Si no lo marcas, de la cena a la hora de dormir no cuenta como tiempo libre para estudiar.</small>
@@ -844,13 +839,12 @@ function viewBienvenida() {
   v.innerHTML = `
     <div class="welcome-top">
     <section class="hero">
-      <div class="eyebrow">Para estudiantes de la UPC</div>
       <h1 class="hero-t">Tu quatri,<br>bajo control<span class="dot">.</span></h1>
       <p class="lead">Quatri monta tu horario de la uni en dos minutos y te dice cuánto <b>tiempo libre te queda de verdad</b>: para estudiar, entrenar, trabajar o simplemente descansar.</p>
     </section>
 
     <div class="demo" aria-label="Ejemplo de un día en Quatri">
-      <div class="demo-head"><span class="eyebrow">Ejemplo · un martes cualquiera</span><span class="pill free-pill">3 h 45 min libres de verdad</span></div>
+      <div class="demo-head"><span class="demo-t">Ejemplo · un martes cualquiera</span><span class="pill free-pill">3 h 45 min libres de verdad</span></div>
       <ul class="timeline">${demo.map(([a, b, k, t, s, col]) => `
         <li class="it ${k}" style="${col ? `--c:${col[1]};--cb:${col[0]}` : k === 'evento' ? '--ev:#E8590C' : ''}"><span class="t">${a}<br><small>${b}</small></span>
         <span class="n"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span></li>`).join('')}</ul>
@@ -880,9 +874,9 @@ function viewBienvenida() {
     </ol>
 
     <div class="trust">
-      <span><i aria-hidden="true">✓</i>Gratis y sin anuncios</span>
-      <span><i aria-hidden="true">✓</i>Con tu cuenta de Google o tu correo, lo tienes igual en el móvil y el ordenador</span>
-      <span><i aria-hidden="true">✓</i>Horarios oficiales del Visor d'Horaris UPC</span>
+      <span>${ico('check')}Gratis y sin anuncios</span>
+      <span>${ico('check')}Con tu cuenta de Google o tu correo, lo tienes igual en el móvil y el ordenador</span>
+      <span>${ico('check')}Horarios oficiales del Visor d'Horaris UPC</span>
     </div>
     <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de ${ESC.escuelas.length} escuelas de la UPC (${ESC.escuelas.map(e => esc(e.s)).join(', ')}) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
   if (S.listo) {
@@ -910,15 +904,14 @@ function viewListo() {
   const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const tour = [
-    ['◷', 'Hoy', 'Tu día hora a hora. Los huecos verdes son tiempo libre: tócalos para añadir algo. Desliza para cambiar de día.'],
-    ['▦', 'Calendario', 'Tu semana y tu mes de un vistazo, con festivos, semanas A/B y exámenes.'],
-    ['✎', 'Estudio', 'Dinos cómo llevas cada asignatura y te proponemos cuántas horas dedicarle esta semana.'],
-    ['⚙', 'Ajustes', 'Cambia tu rutina, grupos o asignaturas cuando quieras, y elige modo claro u oscuro.'],
+    ['hoy', 'Hoy', 'Tu día hora a hora. Los huecos verdes son tiempo libre: tócalos para añadir algo. Desliza para cambiar de día.'],
+    ['cal', 'Calendario', 'Tu semana y tu mes de un vistazo, con festivos, semanas A/B y exámenes.'],
+    ['est', 'Estudio', 'Dinos cómo llevas cada asignatura y te proponemos cuántas horas dedicarle esta semana.'],
+    ['gear', 'Ajustes', 'Cambia tu rutina, grupos o asignaturas cuando quieras, y elige modo claro u oscuro.'],
   ];
   const v = $('#view');
   v.innerHTML = `
     <section class="hero">
-      <div class="eyebrow">Todo listo</div>
       <h1 class="hero-t">Ya tienes<br>tu quatri<span class="dot">.</span></h1>
       <p class="lead">Tus clases, exámenes y rutina ya están dentro. Esto es lo que te queda esta semana:</p>
     </section>
@@ -929,7 +922,7 @@ function viewListo() {
     </div>
     <h2 class="sec">Así se usa</h2>
     <div class="feats">
-      ${tour.map(([ic, t, d]) => `<div class="feat"><span class="num ic" aria-hidden="true">${ic}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
+      ${tour.map(([ic, t, d]) => `<div class="feat"><span class="num ic" aria-hidden="true">${ico(ic)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
       <div class="feat hi"><span class="num ic" aria-hidden="true">+</span><div><b>Añade tu vida</b>
         <p>Con el botón + apuntas entrenos, trabajo o planes. Si les pones trayecto, también lo descontamos de tu tiempo libre.</p></div></div>
     </div>
@@ -980,7 +973,7 @@ function openEvent(id, ds, sMin, eMin, tipo0) {
   ov.className = 'ov';
   ov.innerHTML = `
     <form class="sheet" novalidate>
-      <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <header><h2>${ev ? 'Editar evento' : 'Nuevo evento'}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
       <label class="field"><span>Qué es</span><input id="evT" maxlength="60" placeholder="Ej.: Entreno en pista" value="${esc(ev?.titulo || '')}" autocomplete="off"></label>
       <div class="field"><span>Tipo</span><div class="evtypes">${EV_TYPES.map(([k, n, c]) => `<button type="button" data-t="${k}" style="--ev:${c}" aria-pressed="${F.tipo === k}">${n}</button>`).join('')}</div></div>
       <div id="evAcad" class="stack" hidden>
@@ -1113,7 +1106,7 @@ function openClase(ds, ck) {
   ov.className = 'ov';
   ov.innerHTML = `
     <form class="sheet" novalidate style="${colorVars(s.code)}">
-      <header><h2>${esc(a.n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <header><h2>${esc(a.n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
       <p class="hint" style="margin:-6px 0 0">${TYPE[x[3]] || x[3]} · ${x[1]}–${x[2]} · grupo ${esc(s.group)} · ${esc(x[4].replace(/ - Lab\..*/, ''))}</p>
       <div class="field"><span>El ${dia} ${d.getDate()} de ${MONTHS[d.getMonth()]}</span>
         <div class="seg2" role="group" style="margin:0">
@@ -1186,7 +1179,7 @@ function openPlan(ds, s, e, code, tema, fijoId) {
   const st = estStartOf(ds) || today;
   const dias = [0, 1, 2, 3, 4, 5, 6].map(i => dkey(addDays(dparse(st), i))).filter(k => k >= today);
   const { q, close } = sheet(`
-    <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
     <p class="hint" style="margin:-6px 0 0">${DAYS[wdOf(d)]} ${d.getDate()} · ${fmt(s % 1440)}–${fmt(e % 1440)}${tema ? ` · ${esc(tema)}` : ''}</p>
     <p style="margin:0">${fijoId && !S.estFijo?.[fijoId]?.auto ? 'Lo moviste tú a esta hora.' : nextExam(code, ds) ? 'Es una propuesta de Quatri para llegar bien al examen.' : 'Es una propuesta de Quatri para llevar la asignatura al día.'} Cuando lo hayas hecho, márcalo; si prefieres otra asignatura u otro rato, cámbialo.</p>
     <div id="pMove" class="stack" hidden>
@@ -1203,7 +1196,7 @@ function openPlan(ds, s, e, code, tema, fijoId) {
       <button type="button" class="btn" id="pCancel" hidden>Cancelar</button>
       <span class="sp"></span>
       <button type="button" class="btn" id="pMv">Cambiar</button>
-      <button type="button" class="btn primary" id="pDone">Hecho ✓</button>
+      <button type="button" class="btn primary" id="pDone">${ico('check')} Hecho</button>
     </footer>`);
   const quitarFijo = () => { if (fijoId && S.estFijo) delete S.estFijo[fijoId]; };
   q('#pDone').onclick = () => { close(); marcarHecho(ds, s, e, code, fijoId); };
@@ -1256,8 +1249,8 @@ function openDone(id) {
   const h = (S.estDone || {})[id];
   if (!h) return;
   const { q, close } = sheet(`
-    <header><h2>Estudio · ${esc(subj(h.code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
-    <p style="margin:0">Hecho ✓ ${fmt(h.s % 1440)}–${fmt(h.e % 1440)}${h.t ? ` · ${esc(h.t)}` : ''}. Cuenta como horas de estudio de la semana.</p>
+    <header><h2>Estudio · ${esc(subj(h.code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
+    <p style="margin:0">Hecho: ${fmt(h.s % 1440)}–${fmt(h.e % 1440)}${h.t ? ` · ${esc(h.t)}` : ''}. Cuenta como horas de estudio de la semana.</p>
     <footer><button type="button" class="btn" id="dUndo">No lo hice, deshacer</button><span class="sp"></span><button type="button" class="btn primary" data-x>Cerrar</button></footer>`);
   q('#dUndo').onclick = () => { delete S.estDone[id]; save(); close(); toast('Deshecho'); render(); };
 }
@@ -1291,7 +1284,7 @@ function openRutinaDia(ds, focus) {
   ov.className = 'ov';
   ov.innerHTML = `
     <form class="sheet" novalidate>
-      <header><h2>Tu rutina del ${DAYS[wdOf(d)].toLowerCase()} ${d.getDate()}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <header><h2>Tu rutina del ${DAYS[wdOf(d)].toLowerCase()} ${d.getDate()}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
       <p class="hint" style="margin:0">Solo cambia este día. Lo de siempre se edita en Ajustes → Mi rutina.</p>
       <div class="stack">${rows}</div>
       <footer>
@@ -1334,7 +1327,7 @@ function openRutinaDia(ds, focus) {
 
 function fab(ds) {
   let b = $('#fab');
-  if (!b) { b = document.createElement('button'); b.id = 'fab'; b.className = 'fab'; b.setAttribute('aria-label', 'Nuevo evento'); b.textContent = '+'; document.body.appendChild(b); }
+  if (!b) { b = document.createElement('button'); b.id = 'fab'; b.className = 'fab'; b.setAttribute('aria-label', 'Nuevo evento'); b.innerHTML = ico('plus'); document.body.appendChild(b); }
   b.hidden = false;
   b.onclick = () => openEvent(null, ds());
 }
@@ -1480,7 +1473,7 @@ function dayPlan(ds) {
   for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].kind === 'estudio' && blocks[i].e - blocks[i].s < 15) blocks.splice(i, 1);
   // estudio que ya marcaste como hecho ese día (ocupa su rato y cuenta para la semana)
   for (const [id, h] of Object.entries(S.estDone || {})) if (h.ds === ds && subj(h.code)) blocks.push({ s: h.s, e: h.e, code: h.code, kind: 'estudio', doneId: id,
-    label: `Estudio · ${subj(h.code).n}`, sub: `${h.t ? h.t + ' · ' : ''}hecho ✓` });
+    label: `Estudio · ${subj(h.code).n}`, sub: `${h.t ? h.t + ' · ' : ''}hecho` });
   // eventos propios del alumno (entrenos, trabajo, planes...) y sus trayectos; en exámenes se pueden dejar en pausa
   const evs = eventsOn(ds).filter(x => !(X && (X.pausar || []).includes(x.ev.tipo)));
   const entero = x => x.ev.todoDia || (x.s <= 0 && x.e >= 1440); // todo el día, o un día en medio de un viaje
@@ -1549,87 +1542,164 @@ function dayPlan(ds) {
     classMin: blocks.filter(b => b.kind === 'clase').reduce((n, b) => n + b.e - b.s, 0) };
 }
 
-/* ---------- Tu día ---------- */
+/* ---------- Tu día ----------
+   Arriba, lo que toca ahora en un campo de color (como un reel: nombre en grande, cuánto falta, acciones a la derecha
+   y lo siguiente asomando); debajo, el día entero con la rutina, en una lista limpia. Tocar la tarjeta abre el día
+   a pantalla completa, una cosa por pantalla (openFeed). */
+const ICO = {
+  check: '<path d="M5 12l5 5L20 7"/>', x: '<path d="M18 6L6 18M6 6l12 12"/>', plus: '<path d="M12 5v14M5 12h14"/>',
+  swap: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  skip: '<path d="M5 6l7 6-7 6zM13 6l7 6-7 6z"/>', eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  day: '<rect x="6" y="3" width="12" height="18" rx="3"/><path d="M10 17h4"/>', up: '<path d="M6 15l6-6 6 6"/>',
+  left: '<path d="M15 6l-6 6 6 6"/>', right: '<path d="M9 6l6 6-6 6"/>',
+  hoy: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', cal: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  est: '<path d="M5 19.5V5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5 1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 8h6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.1 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
+};
+const ico = (n, cls = '') => `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
+// color del campo de cada bloque (texto blanco encima)
+function kindColor(it) {
+  if (it.kind === 'clase') return 'var(--k-clase)';
+  if (it.kind === 'examen') return 'var(--k-examen)';
+  if (it.kind === 'plan' || it.kind === 'estudio') return 'var(--k-estudio)';
+  if (it.kind === 'libre') return 'var(--k-libre)';
+  if (it.kind === 'evento') return it.tipo === 'academia' ? 'var(--k-acad)' : evColor(it.tipo);
+  return 'var(--k-rut)';
+}
+// el punto de cada fila: el color de la asignatura en clases y estudio; el del tipo en lo demás
+const dotStyle = it => it.code ? colorVars(it.code) : `--c:${kindColor(it)}`;
+const itemLabel = it => it.kind === 'libre' ? 'Libre' : it.kind === 'saltada' ? `No vas · ${it.label}` : it.label;
+function itemSub(it) {
+  if (it.kind === 'saltada') return `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}`;
+  if (it.kind === 'libre') return 'Toca para añadir algo aquí';
+  return [it.sub, it.mod ? 'cambiado solo este día' : ''].filter(Boolean).join(' · ');
+}
+// qué puedes hacer con cada bloque (en la tarjeta de ahora y en el día a pantalla completa)
+function itemActions(it, ds) {
+  const A = [];
+  if (it.kind === 'plan') {
+    A.push({ l: 'Hecho', i: 'check', f: () => marcarHecho(ds, it.s, it.e, it.code, it.fijoId) });
+    A.push({ l: 'Cambiar', i: 'swap', f: () => openPlan(ds, it.s, it.e, it.code, it.tema, it.fijoId) });
+  } else if (it.kind === 'clase' && it.ck) A.push({ l: 'No voy', i: 'x', f: () => openClase(ds, it.ck) });
+  else if (it.kind === 'libre') A.push({ l: 'Añadir', i: 'plus', f: () => openEvent(null, ds, Math.ceil(it.s / 15) * 15, Math.min(Math.ceil(it.s / 15) * 15 + 60, it.e)) });
+  else if (it.kind === 'evento' && it.id) A.push({ l: 'Editar', i: 'edit', f: () => openEvent(it.id, ds) });
+  else if (it.rk) A.push({ l: 'Cambiar', i: 'edit', f: () => openRutinaDia(ds, it.rk) });
+  else if (it.exId) A.push({ l: 'Ver', i: 'eye', f: () => openExamen(it.code, it.exId) });
+  else if (it.doneId) A.push({ l: 'Deshacer', i: 'x', f: () => openDone(it.doneId) });
+  return A;
+}
+const nowMin = p => { const n = new Date(); let m = n.getHours() * 60 + n.getMinutes(); if (m < p.wake && m + 1440 < p.sleep + 1) m += 1440; return m; };
+const left = m => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) : ''}` : `${m} min`;
+function dayItems(p) {
+  return [...p.blocks, ...p.free, ...p.skipped].sort((a, b) => a.s - b.s || (b.kind === 'saltada') - (a.kind === 'saltada'));
+}
+
 function viewHoy() {
   S.dia = S.dia || dkey(new Date());
   const ds = S.dia, p = dayView(ds), d = p.info.d, today = dkey(new Date());
   const rel = ds === today ? 'Hoy' : ds === dkey(addDays(new Date(), 1)) ? 'Mañana' : ds === dkey(addDays(new Date(), -1)) ? 'Ayer' : DAYS[p.info.wd];
-  const items = [...p.blocks, ...p.free, ...p.skipped].sort((a, b) => a.s - b.s || (b.kind === 'saltada') - (a.kind === 'saltada'));
+  const items = dayItems(p);
+  const vivos = items.filter(it => it.kind !== 'saltada');
+  // lo que toca ahora (o lo siguiente); solo en el día de hoy
+  let cur = null, nxt = null, nm = 0;
+  if (ds === today) {
+    nm = nowMin(p);
+    const i = vivos.findIndex(it => it.s <= nm && nm < it.e);
+    if (i >= 0) { cur = vivos[i]; nxt = vivos[i + 1] || null; }
+    else { cur = vivos.find(it => it.s > nm) || null; nxt = cur ? vivos[vivos.indexOf(cur) + 1] || null : null; }
+  }
+  const enCurso = cur && cur.s <= nm;
+  const ahora = cur ? (() => {
+    const meta = [itemSub(cur) && cur.kind !== 'libre' ? itemSub(cur) : '', `${fmt(cur.s % 1440)}–${fmt(cur.e % 1440)}`, cur.kind === 'libre' ? dur(cur.e - cur.s) : ''].filter(Boolean).join(' · ');
+    const falta = enCurso ? cur.e - nm : cur.s - nm;
+    const A = [...itemActions(cur, ds), { l: 'Mi día', i: 'day', f: () => openFeed(ds, vivos.indexOf(cur)) }];
+    return `<section class="nowcard" style="--k:${kindColor(cur)}" data-feed="${vivos.indexOf(cur)}">
+      <h2>${esc(itemLabel(cur))}</h2>
+      <p class="nc-meta">${esc(meta)}</p>
+      <p class="nc-left"><b>${left(falta)}</b><span>${enCurso ? 'para acabar' : 'para empezar'}</span></p>
+      ${enCurso ? `<div class="nc-bar"><i style="width:${Math.round((nm - cur.s) / (cur.e - cur.s) * 100)}%"></i></div>` : ''}
+      <div class="nc-rail">${A.map((a, k) => `<button data-act="${k}" aria-label="${a.l}">${ico(a.i)}<span>${a.l}</span></button>`).join('')}</div>
+      ${nxt ? `<button class="nc-next" data-feed="${vivos.indexOf(nxt)}"><i class="nc-dot" style="background:${kindColor(nxt)}"></i><small>${fmt(nxt.s % 1440)}</small><b>${esc(itemLabel(nxt))}${nxt.kind === 'libre' ? ` · ${dur(nxt.e - nxt.s)}` : ''}</b>${ico('up')}</button>` : ''}
+    </section>`;
+  })() : '';
+  const mon = mondayOf(d);
+  const strip = [0, 1, 2, 3, 4, 5, 6].map(i => { const x = addDays(mon, i), k = dkey(x);
+    return `<button class="ds${k === ds ? ' on' : ''}${k === today ? ' today' : ''}" data-day="${k}" aria-label="${DAYS[wdOf(x)]} ${x.getDate()}"><span>${DOW1[i]}</span><b>${x.getDate()}</b></button>`; }).join('');
   const row = it => {
-    const style = it.code ? `${colorVars(it.code)}` : it.kind === 'evento' ? `--ev:${evColor(it.tipo)}` : '';
-    const label = it.kind === 'libre' ? `Libre · ${dur(it.e - it.s)}` : it.kind === 'saltada' ? `No vas · ${esc(it.label)}` : esc(it.label);
-    if (it.kind === 'saltada') it = { ...it, sub: `${it.sub} · ${it.siempre ? 'no vas nunca' : 'solo este día'}` };
     const data = it.kind === 'evento' ? `data-ev="${it.id}"` : it.kind === 'libre' ? `data-free="${it.s},${it.e}"` : it.rk ? `data-rut="${it.rk}"`
       : it.kind === 'plan' ? `data-plan="${it.s},${it.e},${it.code},${it.fijoId || ''}" data-tema="${esc(it.tema || '')}"` : it.doneId ? `data-done="${it.doneId}"` : it.exId ? `data-exam="${it.exId}" data-code="${it.code}"` : it.ck ? `data-cls="${esc(it.ck)}"` : '';
-    return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}" style="${style}" ${data}><span class="t">${fmt(it.s % 1440)}<br><small>${fmt(it.e % 1440)}</small></span>
-      <span class="n"><b>${label}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}${it.kind === 'libre' ? '<small>Toca para añadir algo aquí</small>' : ''}${it.mod ? '<small>Cambiado solo este día</small>' : ''}</span></li>`;
+    const sub = itemSub(it);
+    return `<li class="it ${it.kind}${it.mod ? ' mod' : ''}${it === cur && enCurso ? ' cur' : ''}" style="${dotStyle(it)}" ${data}>
+      <span class="t">${fmt(it.s % 1440)}<small>${fmt(it.e % 1440)}</small></span><span class="dot" aria-hidden="true"></span>
+      <span class="n"><b>${esc(itemLabel(it))}${it.kind === 'libre' ? ` · ${dur(it.e - it.s)}` : ''}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+      <span class="du">${it.kind === 'libre' ? '' : dur(it.e - it.s)}</span></li>`;
   };
   const v = $('#view');
   v.innerHTML = `
-    <div class="dayhead">
-      <button class="icon" id="prev" aria-label="Día anterior">‹</button>
-      <div class="dh"><div class="eyebrow">${rel}${p.info.week ? ` · semana ${p.info.week}` : ''}</div>
-        <h1>${DAYS[p.info.wd]} ${d.getDate()} de ${MONTHS[d.getMonth()]}</h1>
-        ${ds !== today ? '<button class="todaybtn" id="today">Volver a hoy</button>' : ''}</div>
-      <button class="icon" id="next" aria-label="Día siguiente">›</button>
+    <div class="hoyhead">
+      <div><h1>${rel}</h1><p>${DAYS[p.info.wd]} ${d.getDate()} de ${MONTHS[d.getMonth()]}${p.info.week ? ` · semana ${p.info.week}` : ''}</p></div>
+      ${ds !== today ? '<button class="todaybtn" id="today">Volver a hoy</button>' : ''}
     </div>
     <div class="hoy-grid">
-    <aside class="hoy-side">
-    <div class="stats">
-      <div class="stat free"><b>${dur(p.freeMin)}</b><span>libres de verdad</span></div>
-      <div class="stat"><b>${p.classMin ? dur(p.classMin) : '—'}</b><span>de clase</span></div>
-      ${p.planMin ? `<div class="stat"><b>${dur(p.planMin)}</b><span>de estudio propuesto</span></div>` : ''}
+    <div class="hoy-main">
+      <div class="dstrip">${strip}</div>
+      ${ahora}
+      <p class="daysum"><span class="l"><b>${dur(p.freeMin)}</b>libres de verdad</span><span><b>${p.classMin ? dur(p.classMin) : '0 h'}</b>de clase</span><span><b>${dur(p.planMin || 0)}</b>de estudio</span></p>
+      ${p.info.note ? `<div class="notice warn">${esc(p.info.note)}</div>` : ''}
+      ${p.exRut ? `<button class="notice exrut" id="exRutGo">Rutina de exámenes activa · <span>cambiarla</span>${ico('right')}</button>` : ''}
+      ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
+      ${!cur && vivos.length ? `<button class="btn feedbtn" data-feed="0">${ico('day')} Ver el día a pantalla completa</button>` : ''}
+      <ul class="timeline">${items.map(row).join('')}</ul>
     </div>
-    ${p.info.note ? `<div class="notice warn" style="margin-top:12px">${esc(p.info.note)}</div>` : ''}
-    ${p.exRut ? `<button class="notice exrut" id="exRutGo" style="margin-top:8px">Rutina de exámenes activa · <span>cambiarla ›</span></button>` : ''}
-    ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
-    ${(() => {
+    <aside class="hoy-side">${(() => {
       // solo en pantallas grandes: los próximos exámenes, para aprovechar el espacio de la columna
       const ex = (S.asignaturas || []).flatMap(c => examsOf(c).filter(e => e[1] >= today).map(e => ({ c, e })))
         .sort((x, y) => x.e[1].localeCompare(y.e[1])).slice(0, 5);
       if (!ex.length) return '';
-      return `<section class="card desk-only next-ex"><div class="eyebrow">Próximos exámenes</div>
+      return `<section class="card desk-only next-ex"><h2 class="sec" style="margin:0 0 4px">Próximos exámenes</h2>
         ${ex.map(({ c, e }) => { const dd = dparse(e[1]), n = Math.round((dd - dparse(today)) / 864e5); return `<div class="nx" style="${colorVars(c)}"><i></i>
           <span><b>${esc(exName(e))} · ${esc(subj(c).s)}</b><small>${esc(subj(c).n)}</small></span>
           <span class="nx-d">${DAYS_SHORT[wdOf(dd)]} ${dd.getDate()}/${dd.getMonth() + 1}<small>${n === 0 ? 'hoy' : n === 1 ? 'mañana' : `en ${n} días`}</small></span></div>`; }).join('')}
       </section>`;
-    })()}
-    </aside>
-    <div class="hoy-main"><ul class="timeline">${items.map(row).join('')}</ul></div>
+    })()}</aside>
     </div>`;
   const shift = n => { S.dia = dkey(addDays(dparse(S.dia), n)); save(); viewHoy(); };
-  $('#prev').onclick = () => slideTo(v, -1, shift);
-  $('#next').onclick = () => slideTo(v, 1, shift);
+  v.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { const k = b.dataset.day; if (k === ds) return; slideTo(v, k > ds ? 1 : -1, () => { S.dia = k; save(); viewHoy(); }); });
   if ($('#today')) $('#today').onclick = () => slideTo(v, ds > today ? -1 : 1, () => { S.dia = today; save(); viewHoy(); });
-  v.querySelectorAll('[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
-  v.querySelectorAll('[data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
-  v.querySelectorAll('[data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
-  v.querySelectorAll('[data-exam]').forEach(el => el.onclick = () => openExamen(el.dataset.code, el.dataset.exam));
-  v.querySelectorAll('[data-plan]').forEach(el => el.onclick = () => { const [s, e, c, fid] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, el.dataset.tema, fid); });
-  v.querySelectorAll('[data-done]').forEach(el => el.onclick = () => openDone(el.dataset.done));
-  if ($('#exRutGo')) $('#exRutGo').onclick = () => go('rutinaex');
-  v.querySelectorAll('[data-free]').forEach(el => el.onclick = () => {
+  v.querySelectorAll('.timeline [data-ev], .allday[data-ev]').forEach(el => el.onclick = () => openEvent(el.dataset.ev, ds));
+  v.querySelectorAll('.timeline [data-rut]').forEach(el => el.onclick = () => openRutinaDia(ds, el.dataset.rut));
+  v.querySelectorAll('.timeline [data-cls]').forEach(el => el.onclick = () => openClase(ds, el.dataset.cls));
+  v.querySelectorAll('.timeline [data-exam]').forEach(el => el.onclick = () => openExamen(el.dataset.code, el.dataset.exam));
+  v.querySelectorAll('.timeline [data-plan]').forEach(el => el.onclick = () => { const [s, e, c, fid] = el.dataset.plan.split(','); openPlan(ds, +s, +e, c, el.dataset.tema, fid); });
+  v.querySelectorAll('.timeline [data-done]').forEach(el => el.onclick = () => openDone(el.dataset.done));
+  v.querySelectorAll('.timeline [data-free]').forEach(el => el.onclick = () => {
     const [a, b] = el.dataset.free.split(',').map(Number);
     openEvent(null, ds, Math.ceil(a / 15) * 15, Math.min(Math.ceil(a / 15) * 15 + 60, b));
   });
-  // línea roja con la hora actual (solo en el día de hoy); se mueve cada minuto
+  if ($('#exRutGo')) $('#exRutGo').onclick = () => go('rutinaex');
+  // tarjeta de ahora: sus botones hacen la acción; tocar el resto abre el día a pantalla completa
+  if (cur) {
+    const A = [...itemActions(cur, ds), { f: () => openFeed(ds, vivos.indexOf(cur)) }];
+    v.querySelectorAll('.nowcard [data-act]').forEach(b => b.onclick = e => { e.stopPropagation(); A[+b.dataset.act].f(); });
+  }
+  v.querySelectorAll('[data-feed]').forEach(el => el.onclick = e => { e.stopPropagation(); openFeed(ds, +el.dataset.feed); });
+  // línea con la hora actual (solo en el día de hoy); se mueve cada minuto
   clearInterval(viewHoy.t);
   if (ds === today) {
     const ul = $('.timeline', v);
     const putNow = () => {
       if (!document.body.contains(ul)) { clearInterval(viewHoy.t); return; }
       ul.querySelectorAll('.nowline,.nowrow').forEach(e => e.remove());
-      const n = new Date(); let nm = n.getHours() * 60 + n.getMinutes();
-      if (nm < p.wake && nm + 1440 < p.sleep + 1) nm += 1440; // pasada la medianoche, antes de dormir
+      const m = nowMin(p);
       const lis = [...ul.children];
-      let k = -1; items.forEach((it, i) => { if (it.s <= nm && nm < it.e) k = i; });
+      let k = -1; items.forEach((it, i) => { if (it.kind !== 'saltada' && it.s <= m && m < it.e) k = i; });
       if (k >= 0) {
         const it = items[k];
-        lis[k].insertAdjacentHTML('beforeend', `<i class="nowline" style="top:${((nm - it.s) / (it.e - it.s) * 100).toFixed(1)}%"></i>`);
+        lis[k].insertAdjacentHTML('beforeend', `<i class="nowline" style="top:${((m - it.s) / (it.e - it.s) * 100).toFixed(1)}%"></i>`);
       } else {
-        const row = '<li class="nowrow" aria-hidden="true"><i class="nowline"></i></li>';
-        const j = items.findIndex(it => it.s > nm);
-        if (j >= 0) lis[j].insertAdjacentHTML('beforebegin', row); else ul.insertAdjacentHTML('beforeend', row);
+        const r = '<li class="nowrow" aria-hidden="true"><i class="nowline"></i></li>';
+        const j = items.findIndex(it => it.s > m);
+        if (j >= 0) lis[j].insertAdjacentHTML('beforebegin', r); else ul.insertAdjacentHTML('beforeend', r);
       }
     };
     putNow();
@@ -1639,6 +1709,53 @@ function viewHoy() {
   tabs('hoy');
   fab(() => S.dia);
 }
+
+// El día a pantalla completa: una cosa por pantalla, en su color; se desliza hacia arriba para pasar a la siguiente.
+function openFeed(ds, start = 0) {
+  const p = dayView(ds), vivos = dayItems(p).filter(it => it.kind !== 'saltada');
+  if (!vivos.length) return;
+  const today = dkey(new Date()), nm = ds === today ? nowMin(p) : -1, d = dparse(ds);
+  const ov = document.createElement('div');
+  ov.className = 'feed';
+  ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Tu día, una cosa por pantalla');
+  ov.innerHTML = `
+    <div class="fd-top"><span>${ds === today ? 'Hoy' : `${DAYS[wdOf(d)]} ${d.getDate()}`} · <b id="fdN">${start + 1}</b> de ${vivos.length}</span>
+      <button class="fd-x" aria-label="Cerrar">${ico('x')}</button></div>
+    <div class="fd-prog">${vivos.map((_, i) => `<i data-i="${i}"></i>`).join('')}</div>
+    <div class="fd-scroll">${vivos.map((it, i) => {
+      const A = itemActions(it, ds), sub = itemSub(it), on = nm >= it.s && nm < it.e;
+      return `<section class="fd-item" style="--k:${kindColor(it)}" data-i="${i}">
+        <div class="fd-body">
+          <p class="fd-when">${on ? 'Ahora · ' : ''}${fmt(it.s % 1440)}–${fmt(it.e % 1440)} · ${dur(it.e - it.s)}</p>
+          <h2>${esc(itemLabel(it))}</h2>
+          ${sub && it.kind !== 'libre' ? `<p class="fd-sub">${esc(sub)}</p>` : ''}
+          ${it.kind === 'libre' ? `<p class="fd-sub">Tiempo libre de verdad hasta las ${fmt(it.e % 1440)}: ya descontados trayectos, comidas y descansos.</p>` : ''}
+          ${it.kind === 'plan' && it.code ? `<p class="fd-sub">${esc(porQueCorto(it.code))}</p>` : ''}
+        </div>
+        <div class="fd-rail">${A.map((a, k) => `<button data-a="${i},${k}" aria-label="${a.l}">${ico(a.i)}<span>${a.l}</span></button>`).join('')}</div>
+        ${vivos[i + 1] ? `<button class="fd-peek" style="--k:${kindColor(vivos[i + 1])}" data-go="${i + 1}"><small>Después · ${fmt(vivos[i + 1].s % 1440)}</small><b>${esc(itemLabel(vivos[i + 1]))}</b>${ico('up')}</button>`
+          : '<p class="fd-end">Fin del día</p>'}
+      </section>`; }).join('')}</div>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  const sc = ov.querySelector('.fd-scroll');
+  const close = () => { ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
+  const key = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', key);
+  ov.querySelector('.fd-x').onclick = close;
+  ov.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { const [i, k] = b.dataset.a.split(',').map(Number); close(); itemActions(vivos[i], ds)[k].f(); });
+  ov.querySelectorAll('[data-go]').forEach(b => b.onclick = () => sc.scrollTo({ top: +b.dataset.go * sc.clientHeight, behavior: reduceMotion() ? 'auto' : 'smooth' }));
+  const mark = i => { ov.querySelector('#fdN').textContent = i + 1; ov.querySelectorAll('.fd-prog i').forEach(x => x.classList.toggle('d', +x.dataset.i <= i)); };
+  sc.addEventListener('scroll', () => mark(Math.round(sc.scrollTop / sc.clientHeight)), { passive: true });
+  sc.scrollTop = start * sc.clientHeight; mark(start);
+  setTimeout(() => ov.querySelector('.fd-x').focus(), 30);
+}
+// "6 créditos · te cuesta · final en 63 días" para un bloque de estudio
+function porQueCorto(code) {
+  const r = weekPlan(estStart()).rows.find(x => x.c === code);
+  return r ? porQue(r) : '';
+}
+
 // Deslizar el dedo a izquierda/derecha: la página sigue al dedo y, si pasas el umbral,
 // sale por un lado y la nueva entra por el otro (día o semana siguiente/anterior).
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1692,9 +1809,9 @@ function swipe(el, fn) {
 /* ---------- pestañas ---------- */
 function tabs(active) {
   // abajo, lo de cada día; Ajustes va aparte: engranaje arriba en el móvil, al final del menú lateral en el ordenador
-  const t = [['hoy', 'Hoy', '◷'], ['calendario', 'Calendario', '▦'], ['estudio', 'Estudio', '✎']];
-  const btn = ([id, label, ic], cls = '') => `<button data-tab="${id}" class="${cls}" aria-current="${id === active ? 'page' : 'false'}"><span aria-hidden="true">${ic}</span>${label}</button>`;
-  actions(`<nav class="tabs"><div class="side-brand"><span>quatri<span class="dot">.</span></span><span class="beta">${esc($('.brand .beta')?.textContent || '')}</span></div>${t.map(x => btn(x)).join('')}${btn(['ajustes', 'Ajustes', '⚙'], 'side-only')}</nav>`);
+  const t = [['hoy', 'Hoy', 'hoy'], ['calendario', 'Calendario', 'cal'], ['estudio', 'Estudio', 'est']];
+  const btn = ([id, label, ic], cls = '') => `<button data-tab="${id}" class="${cls}" aria-current="${id === active ? 'page' : 'false'}">${ico(ic)}${label}</button>`;
+  actions(`<nav class="tabs"><div class="side-brand"><span>quatri<span class="dot">.</span></span><span class="beta">${esc($('.brand .beta')?.textContent || '')}</span></div>${t.map(x => btn(x)).join('')}${btn(['ajustes', 'Ajustes', 'gear'], 'side-only')}</nav>`);
   const gear = $('#gear');
   if (gear) { gear.hidden = false; gear.setAttribute('aria-current', active === 'ajustes' ? 'page' : 'false'); gear.onclick = () => go('ajustes'); }
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
@@ -1742,10 +1859,10 @@ function viewCalendario() {
       <button data-vista="mes" aria-pressed="${!isWeek}">Mes</button>
     </div>
     <div class="dayhead">
-      <button class="icon" id="prev" aria-label="Anterior">‹</button>
-      <div class="dh"><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>
+      <button class="icon" id="prev" aria-label="Anterior">${ico('left')}</button>
+      <div class="dh"><h1>${title}</h1><p class="dsub">${eyebrow}</p>
         ${atToday ? '' : `<button class="todaybtn" id="back">${isWeek ? 'Volver a esta semana' : 'Volver a este mes'}</button>`}</div>
-      <button class="icon" id="next" aria-label="Siguiente">›</button>
+      <button class="icon" id="next" aria-label="Siguiente">${ico('right')}</button>
     </div>
     ${isWeek ? calWeek() : calMonth()}`;
   const shift = n => {
@@ -1790,7 +1907,8 @@ function viewCalendario() {
 function calWeek() {
   const mon = dparse(S.calSemana), today = dkey(new Date());
   const days = [0, 1, 2, 3, 4, 5, 6].map(i => { const ds = dkey(addDays(mon, i)); return { ds, p: dayView(ds) }; });
-  const showRut = !!S.calRutina;
+  // la rutina se ve por defecto (es lo que hace realista el tiempo libre); se puede ocultar
+  const showRut = S.calRutina !== false;
   let h0 = 24, h1 = 0;
   for (const { p } of days) {
     const items = showRut ? [...p.blocks, ...p.free] : [...p.blocks.filter(b => b.kind === 'clase' || b.kind === 'examen' || b.kind === 'estudio' || b.kind === 'plan' || b.kind === 'evento'), ...p.free];
@@ -1891,7 +2009,7 @@ function calMonth() {
     </div>
     <div class="legend">${codes.filter(hasSchedule).map(c => `<span style="${colorVars(c)}"><i></i>${esc(subj(c).s)}</span>`).join('')}
       <span><i class="lg-nolect"></i>Sin clases</span></div>
-    ${events.length ? `<section class="card stack" style="margin-top:12px"><div class="eyebrow">Este mes</div>
+    ${events.length ? `<section class="card stack" style="margin-top:12px"><h2 class="card-t">Este mes</h2>
       <ul class="mlist">${events.map(ev => { const d = dparse(ev.ds); return `<li class="${ev.kind}" ${ev.c ? `style="${colorVars(ev.c)}"` : ''} data-day="${ev.ds}">
         <span class="md">${ev.hasta ? `${d.getDate()}–${dparse(ev.hasta).getDate()}` : `${DAYS_SHORT[wdOf(d)]} ${d.getDate()}`}</span><span>${esc(ev.txt)}${ev.sub ? ` <small>${esc(ev.sub)}</small>` : ''}</span></li>`; }).join('')}</ul></section>` : ''}`;
 }
@@ -2128,7 +2246,7 @@ function marcarHecho(ds, s, e, code, fijoId) {
   S.estDone[id] = { ds, s, e, code, t: '' };
   if (fijo) delete S.estFijo[fijoId];
   save(); render();
-  toast('Hecho ✓', () => { delete S.estDone[id]; fijados.forEach(k => delete S.estFijo[k]); if (fijo) S.estFijo[fijoId] = fijo; save(); render(); });
+  toast('Hecho', () => { delete S.estDone[id]; fijados.forEach(k => delete S.estFijo[k]); if (fijo) S.estFijo[fijoId] = fijo; save(); render(); });
 }
 function viewEstudio() {
   const off = Math.max(0, S.estOff || 0), start = estStart(off);
@@ -2152,7 +2270,7 @@ function viewEstudio() {
     const ok = x.kind === 'estudio', past = ds < today;
     const data = ok ? (x.doneId ? `data-done="${x.doneId}"` : '') : `data-plan="${ds},${x.s},${x.e},${x.code},${x.fijoId || ''}"`;
     return `<div class="erow${ok ? ' ok' : ''}${past && !ok ? ' past' : ''}" style="${colorVars(x.code)}">
-      ${ok ? '<span class="eck on" aria-label="Hecho">✓</span>'
+      ${ok ? `<span class="eck on" aria-label="Hecho">${ico('check')}</span>`
         : `<button class="eck" data-ck="${ds},${x.s},${x.e},${x.code},${x.fijoId || ''}" aria-label="Marcar como hecho"></button>`}
       <button class="emain" ${data}><span class="dot"></span><span class="asn"><b>${esc(subj(x.code).n)}</b><small>${fmt(x.s % 1440)} · ${dur(mins(x))}</small></span></button>
     </div>`;
@@ -2161,11 +2279,11 @@ function viewEstudio() {
   const v = $('#view');
   v.innerHTML = `
     <div class="dayhead">
-      <button class="icon" id="prev" aria-label="Semana anterior" ${off ? '' : 'disabled'}>‹</button>
-      <div class="dh"><div class="eyebrow">${off === 0 ? 'Esta semana' : off === 1 ? 'La semana que viene' : 'Más adelante'}</div>
-        <h1>${a.getDate()} ${m3(a)} – ${b.getDate()} ${m3(b)}</h1>
+      <button class="icon" id="prev" aria-label="Semana anterior" ${off ? '' : 'disabled'}>${ico('left')}</button>
+      <div class="dh"><h1>${a.getDate()} ${m3(a)} – ${b.getDate()} ${m3(b)}</h1>
+        <p class="dsub">${off === 0 ? 'Esta semana' : off === 1 ? 'La semana que viene' : 'Más adelante'}</p>
         ${off ? '<button class="todaybtn" id="thisweek">Volver a esta semana</button>' : ''}</div>
-      <button class="icon" id="next" aria-label="Semana siguiente">›</button>
+      <button class="icon" id="next" aria-label="Semana siguiente">${ico('right')}</button>
     </div>
     <section class="est-top">
       <div class="est-big"><b>${hfmt(total)}</b><span>de estudio</span></div>
@@ -2183,7 +2301,7 @@ function viewEstudio() {
     <div class="elist">${W.rows.map(r => `
       <button class="asrow${r.lv === 'no' ? ' off' : ''}" data-tem="${r.c}" style="${colorVars(r.c)}">
         <span class="dot"></span><span class="asn"><b>${esc(r.a.n)}</b><small>${r.lv === 'no' ? (examsOf(r.c).length ? 'No la estudias' : 'Sin examen') : r.manual ? 'Horas puestas por ti' : porQue(r) || 'Sin examen a la vista'}</small></span>
-        <span aria-hidden="true">›</span></button>`).join('')}</div>
+        ${ico('right')}</button>`).join('')}</div>
     <p class="hint" style="margin-top:8px">Toca una asignatura para decir cómo la llevas, ver sus horas o sus exámenes.</p>`;
   const rerender = () => { save(); const y = window.scrollY; viewEstudio(); window.scrollTo(0, y); };
   v.querySelectorAll('[data-ck]').forEach(el => el.onclick = () => { const [ds, s, e, c, f] = el.dataset.ck.split(','); marcarHecho(ds, +s, +e, c, f); });
@@ -2209,7 +2327,7 @@ function openCuanto() {
   S.estudio = S.estudio || { nivel: {}, ajuste: {} };
   const m = S.estMax || {}, F = { n: nivelAct(), s: m.semana ?? 2, f: m.finde ?? 3 };
   const { q, close } = sheet(`
-    <header><h2>Cuánto estudio</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+    <header><h2>Cuánto estudio</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
     <div class="seg2" role="group" style="margin:0">${NIVELES.map(([f, t]) => `<button type="button" data-niv="${f}">${t}<small data-nh="${f}"></small></button>`).join('')}</div>
     <small class="hint" id="cHint"></small>
     <div class="adj-row"><span class="adj-n">Máximo al día<small>De lunes a viernes</small></span>
@@ -2289,9 +2407,9 @@ async function viewTemario() {
   const r = weekPlan(estStart()).rows.find(x => x.c === code);
   const ex = examsOf(code).sort((x, y) => x[1].localeCompare(y[1]));
   v.innerHTML = `
-    <button class="link back" id="tBack">‹ Estudio</button>
+    <button class="link back" id="tBack">${ico('left')} Estudio</button>
     <div class="tem-head" style="${colorVars(code)}"><span class="bar"></span><div>
-      <div class="eyebrow">Asignatura</div><h1>${esc(a.n)}</h1></div></div>
+      <h1>${esc(a.n)}</h1></div></div>
     <div class="eday">Esta semana</div>
     ${r && r.lv !== 'no' ? `<div class="field" style="margin:0 0 6px"><span>¿Cómo la llevas?</span>
         <div class="seg2" role="group" style="margin:0">${CUESTA.map(([k, t]) => `<button data-cu="${k}" aria-pressed="${(r.cu || '') === k}">${t}</button>`).join('')}</div></div>
@@ -2305,7 +2423,7 @@ async function viewTemario() {
       <button class="exrow${e[1] < today ? ' past' : ''}" style="${colorVars(code)}" ${e[5] ? `data-exid="${e[5]}"` : ''}>
         <span class="md">${DAYS_SHORT[wdOf(d)]} ${d.getDate()}/${d.getMonth() + 1}</span>
         <span><b>${esc(exName(e))}</b><small>${e[2] ? `${e[2]}–${e[3]}` : 'Sin hora'}${e[5] ? '' : ' · oficial'}</small></span>
-        ${e[5] ? '<span aria-hidden="true">›</span>' : ''}</button>`; }).join('') || '<p class="hint">No hay exámenes en el calendario.</p>'}</div>
+        ${e[5] ? ico('right') : ''}</button>`; }).join('') || '<p class="hint">No hay exámenes en el calendario.</p>'}</div>
     ${(EV[code] || [])[1] ? `<p class="hint" style="margin:8px 0 0">Nota final: ${esc(EV[code][1])}</p>` : ''}
     <button class="btn" id="tAddEx" style="margin-top:10px">+ Añadir control o entrega</button>`;
   const rerender = () => { save(); const y = window.scrollY; viewTemario(); window.scrollTo(0, y); };
@@ -2333,7 +2451,7 @@ function openExamen(code, id, after) {
   ov.className = 'ov';
   ov.innerHTML = `
     <form class="sheet" novalidate style="${colorVars(code)}">
-      <header><h2>${x ? 'Editar' : 'Nuevo'} examen · ${esc(subj(code).s)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
+      <header><h2>${x ? 'Editar' : 'Nuevo'} examen · ${esc(subj(code).s)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
       <div class="field"><span>Tipo</span><div class="seg2 four" role="group" style="margin:0">${EX_TIPOS.map(([k, n]) => `<button type="button" data-tipo="${k}">${n}</button>`).join('')}</div></div>
       <label class="field"><span>Nombre (opcional)</span><input id="xN" maxlength="50" value="${esc(x?.nombre || '')}" placeholder="Ej.: Control 2 · Tema 3" autocomplete="off"></label>
       <label class="field"><span>Día</span><input type="date" id="xD" value="${x?.fecha || ''}"></label>
@@ -2391,7 +2509,7 @@ function applyTheme() {
   else delete root.dataset.theme;
   const dark = t === 'oscuro' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   // color de la barra del sistema en el móvil
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.setAttribute('content', dark ? '#16241F' : '#F1F5F2'); m.removeAttribute('media'); });
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.setAttribute('content', dark ? '#0E1014' : '#F3F4F7'); m.removeAttribute('media'); });
 }
 
 /* ---------- rutina de exámenes (pantalla) ---------- */
@@ -2401,8 +2519,7 @@ function viewRutinaEx() {
   const per = examPeriods().map(p => `<li><b>${p.n === 'parciales' ? 'Parciales' : 'Finales'}:</b> del ${fd(p.a)} al ${fd(p.b)}${p.n === 'finales' ? ' (desde que acaban las clases)' : ''}</li>`).join('');
   const hs = (id, label, vals, val) => `<label class="field"><span>${label}</span><select id="${id}">${vals.map(h => `<option value="${h}" ${val === h ? 'selected' : ''}>${hfmt(h)}</option>`).join('')}</select></label>`;
   v.innerHTML = `
-    <button class="link back" id="xBack">‹ Ajustes</button>
-    <div class="eyebrow">Ajustes</div>
+    <button class="link back" id="xBack">${ico('left')} Ajustes</button>
     <h1>Rutina de exámenes</h1>
     <p class="lead">En época de exámenes tu día cambia: estudias más, cenas más tarde, dejas cosas… Quatri usa esta rutina esos días y coloca más estudio.</p>
     <section class="card stack">
@@ -2410,18 +2527,18 @@ function viewRutinaEx() {
       <ul class="plain">${per}</ul>
     </section>
     <div id="xBox" class="stack" ${X.activa ? '' : 'hidden'} style="margin-top:12px">
-      <section class="card stack"><div class="eyebrow">La noche</div>
+      <section class="card stack"><h2 class="card-t">La noche</h2>
         <label class="check"><input type="checkbox" id="xN" ${X.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
         <div class="fields">
           <label class="field"><span>Cenas a las</span><input type="time" id="xC" step="300" value="${X.cena || R.cena}"></label>
           <label class="field"><span>Te vas a dormir a las</span><input type="time" id="xD" step="300" value="${X.dormir || R.dormir}"></label>
         </div></section>
-      <section class="card stack"><div class="eyebrow">Estudio al día</div>
+      <section class="card stack"><h2 class="card-t">Estudio al día</h2>
         <div class="fields">
           ${hs('xS', 'Máximo entre semana', [3, 4, 5, 6, 7, 8], X.maxSemana)}
           ${hs('xF', 'Máximo el fin de semana', [3, 4, 5, 6, 7, 8], X.maxFinde)}
         </div></section>
-      <section class="card stack"><div class="eyebrow">Dejar en pausa esos días</div>
+      <section class="card stack"><h2 class="card-t">Dejar en pausa esos días</h2>
         ${EV_TYPES.filter(t => t[0] !== 'estudio' && t[0] !== 'otro').map(([k, n]) => `<label class="check"><input type="checkbox" data-pausa="${k}" ${X.pausar.includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}
         <small class="hint">Los eventos de ese tipo no aparecen ni ocupan tiempo durante los exámenes.</small>
       </section>
@@ -2446,11 +2563,10 @@ function viewAjustes() {
   const v = $('#view');
   const tema = S.tema || 'auto';
   v.innerHTML = `
-    <div class="eyebrow">Ajustes</div>
     <h1>Tu Quatri</h1>
     <p class="lead">${esc(g.n)} · ${S.asignaturas.length} asignaturas · ${esc(D.periodo.curso)} ${esc(D.periodo.q)}</p>
     <section class="card stack cuenta" style="margin-bottom:12px">
-      <div class="eyebrow">Cuenta</div>
+      <h2 class="card-t">Cuenta</h2>
       ${USER ? `
         <div><b>${esc(USER.user_metadata?.full_name || USER.email)}</b><br><small class="hint">${esc(USER.email)} · ${S._sync?.dirty ? 'guardando cambios…' : 'todo guardado en tu cuenta'}</small></div>
         <div class="row"><button class="btn small" id="aOut">Cerrar sesión</button><button class="btn small danger" id="aDel">Borrar mi cuenta</button></div>
@@ -2462,7 +2578,7 @@ function viewAjustes() {
       const A = avisosCfg();
       const sel = (id, opts, val) => `<select id="${id}">${opts.map(([v, t]) => `<option value="${v}" ${String(val) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
       return `<section class="card stack" style="margin-bottom:12px">
-        <div class="eyebrow">Avisos</div>
+        <h2 class="card-t">Avisos</h2>
         ${!USER ? `<p style="margin:0">Entra en tu cuenta para recibir avisos de clases, estudio y exámenes, aunque tengas Quatri cerrada.</p>`
         : `<p style="margin:0" id="avDev">Comprobando este dispositivo…</p>
           <div id="avOpts" class="stack" ${A.on ? '' : 'hidden'}>
@@ -2480,7 +2596,7 @@ function viewAjustes() {
       </section>`;
     })()}
     <section class="card stack" style="margin-bottom:12px">
-      <div class="eyebrow">Apariencia</div>
+      <h2 class="card-t">Apariencia</h2>
       <div class="seg2" role="group" aria-label="Modo de color" style="margin:0">
         <button data-tema="auto" aria-pressed="${tema === 'auto'}">Automático</button>
         <button data-tema="claro" aria-pressed="${tema === 'claro'}">Claro</button>

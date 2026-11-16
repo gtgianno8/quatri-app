@@ -1,6 +1,6 @@
 // Service worker: la app funciona sin conexión una vez abierta.
 // Cambia VERSION cada vez que publiques cambios para que los móviles se actualicen.
-const VERSION = 'quatri-v0.59';
+const VERSION = 'quatri-v0.60';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'data/escuelas.json'];
 // los horarios, temarios y evaluación de cada escuela se guardan al usarlos (ver fetch)
 
