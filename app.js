@@ -1156,26 +1156,27 @@ function openPlan(ds, s, e, code, tema, fijoId) {
   const { q, close } = sheet(`
     <header><h2>Estudio · ${esc(subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">×</button></header>
     <p class="hint" style="margin:-6px 0 0">${DAYS[wdOf(d)]} ${d.getDate()} · ${fmt(s % 1440)}–${fmt(e % 1440)}${tema ? ` · ${esc(tema)}` : ''}</p>
-    <p style="margin:0">${fijoId && !S.estFijo?.[fijoId]?.auto ? 'Lo moviste tú a esta hora.' : nextExam(code, ds) ? 'Es una propuesta de Quatri para llegar bien al examen.' : 'Es una propuesta de Quatri para llevar la asignatura al día.'} Cuando lo hayas hecho, márcalo; si te va mejor otro rato, muévelo.</p>
+    <p style="margin:0">${fijoId && !S.estFijo?.[fijoId]?.auto ? 'Lo moviste tú a esta hora.' : nextExam(code, ds) ? 'Es una propuesta de Quatri para llegar bien al examen.' : 'Es una propuesta de Quatri para llevar la asignatura al día.'} Cuando lo hayas hecho, márcalo; si prefieres otra asignatura u otro rato, cámbialo.</p>
     <div id="pMove" class="stack" hidden>
+      <label class="field"><span>Asignatura</span><select id="pA">${(S.asignaturas || []).filter(c => subj(c)).map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${esc(subj(c).n)}</option>`).join('')}</select></label>
       <div class="fields">
         <label class="field"><span>Día</span><select id="pD">${dias.map(k => { const x = dparse(k); return `<option value="${k}" ${k === ds ? 'selected' : ''}>${k === today ? 'Hoy' : DAYS[wdOf(x)]} ${x.getDate()}</option>`; }).join('')}</select></label>
         <label class="field"><span>Empieza</span><input type="time" id="pI" step="300" value="${fmt(s % 1440)}"></label>
       </div>
-      <small class="hint">Dura ${dur(len)}. El resto de tu estudio se recoloca alrededor.</small>
+      <small class="hint">Dura ${dur(len)}. El resto de tu estudio se recoloca solo: si cambias de asignatura, las horas de la otra van a otro hueco.</small>
       <p class="err" id="pErr" hidden></p>
     </div>
     <footer>
       <button type="button" class="btn" id="pSkip">${fijoId ? 'Quitar' : 'Saltar'}</button>
       <button type="button" class="btn" id="pCancel" hidden>Cancelar</button>
       <span class="sp"></span>
-      <button type="button" class="btn" id="pMv">Mover</button>
+      <button type="button" class="btn" id="pMv">Cambiar</button>
       <button type="button" class="btn primary" id="pDone">Hecho ✓</button>
     </footer>`);
   const quitarFijo = () => { if (fijoId && S.estFijo) delete S.estFijo[fijoId]; };
   q('#pDone').onclick = () => { close(); marcarHecho(ds, s, e, code, fijoId); };
   q('#pCancel').onclick = () => {
-    q('#pMove').hidden = true; q('#pErr').hidden = true; q('#pMv').textContent = 'Mover'; q('#pMv').classList.remove('primary');
+    q('#pMove').hidden = true; q('#pErr').hidden = true; q('#pMv').textContent = 'Cambiar'; q('#pMv').classList.remove('primary');
     q('#pDone').hidden = q('#pSkip').hidden = false; q('#pCancel').hidden = true;
   };
   q('#pSkip').onclick = () => {
@@ -1196,12 +1197,12 @@ function openPlan(ds, s, e, code, tema, fijoId) {
   };
   q('#pMv').onclick = () => {
     const box = q('#pMove');
-    // al mover, solo quedan "Cancelar" y "Guardar aquí" (sin "Hecho", para no confundirlos)
+    // al cambiar, solo quedan "Cancelar" y "Guardar" (sin "Hecho", para no confundirlos)
     if (box.hidden) {
-      box.hidden = false; q('#pMv').textContent = 'Guardar aquí'; q('#pMv').classList.add('primary');
+      box.hidden = false; q('#pMv').textContent = 'Guardar'; q('#pMv').classList.add('primary');
       q('#pDone').hidden = q('#pSkip').hidden = true; q('#pCancel').hidden = false; return;
     }
-    const nd = q('#pD').value, ni = q('#pI').value;
+    const nd = q('#pD').value, ni = q('#pI').value, nc = q('#pA').value || code;
     const err = m => { q('#pErr').textContent = m; q('#pErr').hidden = false; };
     if (!ni) return err('Elige la hora.');
     const ns = toMin(ni), ne = ns + len;
@@ -1213,8 +1214,10 @@ function openPlan(ds, s, e, code, tema, fijoId) {
     if (otro) return err('A esa hora ya tienes otro bloque de estudio que has movido.');
     if (ne > p.sleep) return err('Acabaría después de tu hora de dormir.');
     S.estFijo = S.estFijo || {};
-    S.estFijo[fijoId || newId()] = { ds: nd, s: ns, e: ne, code, t: tema || '' };
-    save(); close(); toast('Bloque movido'); render();
+    if (nc !== code && examsOf(nc).some(x => x[1] === nd && x[0] !== 'entrega')) return err(`Ese día tienes el examen de ${subj(nc).n}.`);
+    if (nd === ds && ns === s && nc === code) { close(); return; }
+    S.estFijo[fijoId || newId()] = { ds: nd, s: ns, e: ne, code: nc, t: '' };
+    save(); close(); toast(nc !== code ? `Ahora estudias ${subj(nc).n}` : 'Bloque movido'); render();
   };
 }
 function openDone(id) {
