@@ -1644,12 +1644,18 @@ const ICO = {
 };
 const ico = (n, cls = '') => `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
 // color del campo de cada bloque (texto blanco encima)
+// Color de un bloque en la tarjeta "Ahora" y en el scroll: el mismo que en el calendario y en la lista del día
+// (clases, estudio y exámenes con el color de su asignatura; planes con el de su tipo). Un poco más oscuro
+// que el de los puntos, para que el texto blanco se lea bien encima.
+const subjStrong = code => (colorVars(code).match(/--c:([^;]+)/) || [])[1];
 function kindColor(it) {
+  const sc = ['clase', 'examen', 'plan', 'estudio'].includes(it.kind) && it.code && subj(it.code) ? subjStrong(it.code) : null;
+  if (sc) return `color-mix(in srgb, ${sc} 84%, #000)`;
   if (it.kind === 'clase') return 'var(--k-clase)';
   if (it.kind === 'examen') return 'var(--k-examen)';
   if (it.kind === 'plan' || it.kind === 'estudio') return 'var(--k-estudio)';
   if (it.kind === 'libre') return 'var(--k-libre)';
-  if (it.kind === 'evento') return it.tipo === 'academia' ? 'var(--k-acad)' : evColor(it.tipo);
+  if (it.kind === 'evento') return evColor(it.tipo);
   return 'var(--k-rut)';
 }
 // el punto de cada fila: el color de la asignatura en clases y estudio; el del tipo en lo demás
@@ -1780,8 +1786,16 @@ function viewHoy() {
     const ul = $('.timeline', v);
     const putNow = () => {
       if (!document.body.contains(ul)) { clearInterval(viewHoy.t); return; }
-      ul.querySelectorAll('.nowline,.nowrow').forEach(e => e.remove());
       const m = nowMin(p);
+      // tarjeta de ahora: si lo que tocaba ya ha acabado (o lo siguiente ha empezado), se rehace la pantalla;
+      // si no, solo se pone al día cuánto falta y la barra (sin rehacer nada si hay una hoja o el scroll abiertos)
+      if (cur && (enCurso ? m >= cur.e : m >= cur.s)) {
+        if (!document.querySelector('.sheet-bg, .sheet, .feed')) { viewHoy(); return; }
+      } else if (cur) {
+        const b = v.querySelector('.nc-left b'); if (b) b.textContent = left(enCurso ? cur.e - m : cur.s - m);
+        const bar = v.querySelector('.nc-bar i'); if (bar) bar.style.width = Math.round((m - cur.s) / (cur.e - cur.s) * 100) + '%';
+      }
+      ul.querySelectorAll('.nowline,.nowrow').forEach(e => e.remove());
       const lis = [...ul.children];
       let k = -1; items.forEach((it, i) => { if (it.kind !== 'saltada' && it.s <= m && m < it.e) k = i; });
       if (k >= 0) {
@@ -1794,7 +1808,11 @@ function viewHoy() {
       }
     };
     putNow();
-    viewHoy.t = setInterval(putNow, 60000);
+    viewHoy.t = setInterval(putNow, 15000);
+    // al volver a la app (el móvil frena los temporizadores en segundo plano), se pone al día enseguida
+    document.removeEventListener('visibilitychange', viewHoy.vis);
+    viewHoy.vis = () => { if (!document.hidden) putNow(); };
+    document.addEventListener('visibilitychange', viewHoy.vis);
   }
   swipe(v, shift);
   tabs('hoy');
@@ -1831,6 +1849,9 @@ const ILU = {
   noche: `<path class="y" d="M182 20a30 30 0 1 0 30 42 26 26 0 0 1-30-42z"/><circle class="a" cx="40" cy="34" r="3"/><circle class="b" cx="80" cy="20" r="2.5"/><circle class="b" cx="120" cy="44" r="2"/>
     <rect class="a" x="36" y="96" width="168" height="40" rx="14"/><rect class="c" x="24" y="84" width="32" height="56" rx="12"/><rect class="c" x="184" y="84" width="32" height="56" rx="12"/><rect class="d" x="60" y="104" width="56" height="16" rx="6"/>`,
   academia: `<rect class="d" x="56" y="16" width="128" height="74" rx="8"/><path class="sy" d="M76 40h40M76 60h70"/><circle class="a" cx="120" cy="116" r="16"/><path class="a" d="M88 150a32 26 0 0 1 64 0z"/><rect class="c" x="30" y="140" width="180" height="10" rx="5"/>`,
+  deporte: `<circle class="y" cx="200" cy="30" r="15"/><circle class="a" cx="76" cy="96" r="38"/><path class="sd" d="M38 96h76M76 58v76M50 70c16 14 16 38 0 52M102 70c-16 14-16 38 0 52"/>
+    <rect class="b" x="140" y="92" width="76" height="8" rx="4"/><rect class="a" x="140" y="74" width="14" height="44" rx="5"/><rect class="a" x="202" y="74" width="14" height="44" rx="5"/>
+    <rect class="c" x="128" y="82" width="10" height="28" rx="4"/><rect class="c" x="218" y="82" width="10" height="28" rx="4"/><rect class="d" x="20" y="140" width="200" height="8" rx="4"/>`,
   viaje: `<rect class="a" x="62" y="50" width="116" height="86" rx="12"/><path class="sa" d="M98 50V34h44v16"/><rect class="y" x="62" y="80" width="116" height="10"/><circle class="d" cx="84" cy="142" r="7"/><circle class="d" cx="156" cy="142" r="7"/>`,
   evento: `<rect class="a" x="56" y="30" width="128" height="110" rx="12"/><rect class="d" x="56" y="30" width="128" height="30" rx="12"/><path class="sa" d="M86 20v20M154 20v20"/>
     <path class="y" d="M120 74l9 18 20 3-14 14 3 20-18-9-18 9 3-20-14-14 20-3z"/>`
@@ -1839,12 +1860,16 @@ function iluOf(it) {
   if (it.kind === 'plan' || it.kind === 'estudio') return 'estudio';
   if (it.kind === 'libre') return it.noche ? 'noche' : 'libre';
   if (it.kind === 'rutina') return { despertar: 'despertar', comida: 'comida', merienda: 'merienda', descanso: 'descanso', cena: 'cena' }[it.rk] || 'descanso';
-  if (it.kind === 'evento') return it.tipo === 'academia' ? 'academia' : it.tipo === 'viaje' ? 'viaje' : 'evento';
+  if (it.kind === 'evento') return it.tipo === 'academia' ? 'academia' : it.tipo === 'viaje' ? 'viaje' : it.tipo === 'entreno' || it.tipo === 'partido' ? 'deporte' : 'evento';
   if (it.kind === 'noche') return 'noche';
   return ILU[it.kind] ? it.kind : 'evento';
 }
 const iluSvg = (n, cls = 'fd-ill') => `<svg class="${cls}" viewBox="0 0 240 160" aria-hidden="true">${ILU[n] || ''}</svg>`;
 
+// "Ahora · quedan 25 min · 10:00–12:00" (si está pasando) o "10:00–12:00 · 2 h"
+const fdWhen = (it, nm) => nm >= it.s && nm < it.e
+  ? `Ahora · quedan ${left(it.e - nm)} · ${fmt(it.s % 1440)}–${fmt(it.e % 1440)}`
+  : `${fmt(it.s % 1440)}–${fmt(it.e % 1440)} · ${dur(it.e - it.s)}`;
 function openFeed(ds, start = 0) {
   const p = dayView(ds), vivos = dayItems(p).filter(it => it.kind !== 'saltada');
   if (!vivos.length) return;
@@ -1861,7 +1886,7 @@ function openFeed(ds, start = 0) {
       return `<section class="fd-item" style="--k:${kindColor(it)}" data-i="${i}">
         ${iluSvg(iluOf(it))}
         <div class="fd-body">
-          <p class="fd-when">${on ? 'Ahora · ' : ''}${fmt(it.s % 1440)}–${fmt(it.e % 1440)} · ${dur(it.e - it.s)}</p>
+          <p class="fd-when" ${ds === today ? `data-s="${it.s}" data-e="${it.e}"` : ''}>${fdWhen(it, nm)}</p>
           <h2>${esc(itemLabel(it))}</h2>
           ${sub && it.kind !== 'libre' ? `<p class="fd-sub">${esc(sub)}</p>` : ''}
           ${it.kind === 'libre' ? `<p class="fd-sub">Tiempo libre de verdad hasta las ${fmt(it.e % 1440)}: ya descontados trayectos, comidas y descansos.</p>` : ''}
@@ -1874,7 +1899,13 @@ function openFeed(ds, start = 0) {
   document.body.appendChild(ov);
   document.body.style.overflow = 'hidden';
   const sc = ov.querySelector('.fd-scroll');
-  const close = () => { ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
+  // lo que está pasando ahora dice cuánto le queda, y se pone al día solo mientras el scroll está abierto
+  const tick = () => { if (ds !== today) return; const m = nowMin(p);
+    ov.querySelectorAll('.fd-when[data-s]').forEach(el => { el.textContent = fdWhen({ s: +el.dataset.s, e: +el.dataset.e }, m); }); };
+  const tm = setInterval(tick, 15000);
+  const vis = () => { if (!document.hidden) tick(); };
+  document.addEventListener('visibilitychange', vis);
+  const close = () => { clearInterval(tm); document.removeEventListener('visibilitychange', vis); ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
   const key = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', key);
   ov.querySelector('.fd-x').onclick = close;
