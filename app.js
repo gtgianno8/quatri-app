@@ -1878,7 +1878,7 @@ function openFeed(ds, start = 0) {
   ov.className = 'feed';
   ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Tu día, una cosa por pantalla');
   ov.innerHTML = `
-    <div class="fd-top"><span>${ds === today ? 'Hoy' : `${DAYS[wdOf(d)]} ${d.getDate()}`} · <b id="fdN">${start + 1}</b> de ${vivos.length}</span>
+    <div class="fd-top"><span>${ds === today ? `<time class="fd-clock" id="fdClock">${fmt(new Date().getHours() * 60 + new Date().getMinutes())}</time> · Hoy` : `${DAYS[wdOf(d)]} ${d.getDate()}`} · <b id="fdN">${start + 1}</b> de ${vivos.length}</span>
       <button class="fd-x" aria-label="Cerrar">${ico('x')}</button></div>
     <div class="fd-prog">${vivos.map((_, i) => `<i data-i="${i}"></i>`).join('')}</div>
     <div class="fd-scroll">${vivos.map((it, i) => {
@@ -1900,9 +1900,11 @@ function openFeed(ds, start = 0) {
   document.body.style.overflow = 'hidden';
   const sc = ov.querySelector('.fd-scroll');
   // lo que está pasando ahora dice cuánto le queda, y se pone al día solo mientras el scroll está abierto
-  const tick = () => { if (ds !== today) return; const m = nowMin(p);
+  // y arriba, la hora en vivo (cambia en cuanto cambia el minuto)
+  const tick = () => { if (ds !== today) return; const m = nowMin(p), n = new Date();
+    const c = ov.querySelector('#fdClock'); if (c) c.textContent = fmt(n.getHours() * 60 + n.getMinutes());
     ov.querySelectorAll('.fd-when[data-s]').forEach(el => { el.textContent = fdWhen({ s: +el.dataset.s, e: +el.dataset.e }, m); }); };
-  const tm = setInterval(tick, 15000);
+  const tm = setInterval(tick, 5000);
   const vis = () => { if (!document.hidden) tick(); };
   document.addEventListener('visibilitychange', vis);
   const close = () => { clearInterval(tm); document.removeEventListener('visibilitychange', vis); ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
