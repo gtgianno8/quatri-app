@@ -614,7 +614,7 @@ function viewAsignaturas() {
   const v = $('#view');
   v.innerHTML = `
     <h1>¿Qué asignaturas haces este cuatrimestre?</h1>
-    <p class="lead">Marca un curso entero con un toque y luego añade o quita las que no encajen: repetidas, adelantadas u optativas.</p>
+    <p class="lead">Marca tu curso con un toque y añade o quita las que no encajen.</p>
     ${avisoCambio()}
     <input class="search" id="q" type="search" placeholder="Buscar asignatura" autocomplete="off">
     <div id="list"></div>`;
@@ -698,7 +698,7 @@ function viewGrupos() {
     const missing = codes.filter(c => !S.grupos[c] || !options(c).includes(S.grupos[c]));
     v.innerHTML = `
       <h1>¿En qué grupos estás?</h1>
-      <p class="lead">El grupo de teoría se pone solo según tu subgrupo: los que empiezan por 1 van con la teoría 1 y los que empiezan por 2, con la 2.</p>
+      <p class="lead">Elige tu subgrupo; el de teoría se pone solo.</p>
       ${avisoCambio()}
       <div class="toggle" role="group">
         <button data-m="1" aria-pressed="${S.mismo}">Mismo grupo en todas</button>
@@ -777,13 +777,9 @@ function viewSemana() {
   const v = $('#view');
   v.innerHTML = `
     <h1>Tu semana de clases</h1>
-    <p class="lead">Las marcas A y B son laboratorios que solo tienes en semanas alternas. Toca un bloque para ver el detalle.</p>
+    <p class="lead">A y B son laboratorios de semanas alternas. Toca un bloque para ver el detalle.</p>
     ${avisoCambio()}
-    <div class="stats">
-      <div class="stat"><b>${S.asignaturas.length}</b><span>asignaturas</span></div>
-      <div class="stat"><b>${num(Math.round(mins / 60 * 10) / 10)} h</b><span>de clase por semana (media)</span></div>
-      <div class="stat"><b>${exams.length}</b><span>finales en enero</span></div>
-    </div>
+    <p class="daysum"><span><b>${S.asignaturas.length}</b>asignaturas</span><span><b>${num(Math.round(mins / 60 * 10) / 10)} h</b>de clase a la semana</span><span><b>${exams.length}</b>finales</span></p>
     ${cl.length ? `<div class="notice bad" style="margin-top:14px"><b>Hay clases que se pisan.</b> Revisa los grupos:<ul>${cl.map(([a, b]) =>
       `<li>${DAYS[a.x[0]]}: ${esc(shortName(a.code))} (${esc(a.group)}) ${a.x[1]}–${a.x[2]} con ${esc(shortName(b.code))} (${esc(b.group)}) ${b.x[1]}–${b.x[2]}</li>`).join('')}</ul></div>`
       : `<div class="notice good" style="margin-top:14px">Ninguna clase se pisa.</div>`}
@@ -814,7 +810,7 @@ function viewRutina() {
   const time = (id, label, val, hint = '') => `<label class="field"><span>${label}</span><input type="time" id="${id}" value="${val}" step="300">${hint ? `<small>${hint}</small>` : ''}</label>`;
   v.innerHTML = `
     <h1>Tu día a día</h1>
-    <p class="lead">Con esto calculamos tus horas libres de verdad, no solo los huecos entre clases. Son valores aproximados: los podrás cambiar cuando quieras.</p>
+    <p class="lead">Con esto sale tu tiempo libre de verdad. Aproximado está bien: lo cambias cuando quieras.</p>
     <div class="stack">
       <section class="card stack"><h2 class="card-t">Ir a la uni</h2>
         <div class="fields">
@@ -886,57 +882,70 @@ function viewRutina() {
 // Lo primero que ve alguien nuevo: qué es Quatri, qué hace por ti y qué tienes que hacer para dejarlo listo.
 function viewBienvenida() {
   const c = UPC_COLORS;
+  // un martes de ejemplo: la rutina completa, como la verás tú (con los colores de cada cosa)
   const demo = [
-    ['08:00', '08:45', 'trayecto', 'Ida a la uni', ''],
-    ['09:00', '11:00', 'clase', 'Física', 'Teoría · aula TR2 · 0.15', c[0]],
-    ['11:00', '13:00', 'clase', 'Química', 'Laboratorio · semana A', c[5]],
-    ['13:00', '13:45', 'trayecto', 'Vuelta a casa', ''],
-    ['14:30', '15:30', 'rutina', 'Comida y descanso', ''],
-    ['15:30', '17:45', 'libre', 'Libre · 2 h 15 min', 'Para estudiar lo que toca hoy'],
-    ['18:00', '19:30', 'evento', 'Entreno', 'Lo añades tú · cada martes'],
+    ['07:45', '08:45', 'trayecto', 'Ida a la uni', '', ''],
+    ['09:00', '11:00', 'clase', 'Física II', 'Teoría · aula TR2', c[0][1]],
+    ['11:00', '13:00', 'clase', 'Química', 'Laboratorio · semana A', c[5][1]],
+    ['13:00', '14:00', 'trayecto', 'Vuelta a casa', '', ''],
+    ['14:30', '15:30', 'rutina', 'Comida y descanso', '', ''],
+    ['15:30', '17:45', 'libre', 'Libre · 2 h 15 min', 'Para lo que quieras', ''],
+    ['18:00', '19:30', 'evento', 'Entreno', 'Lo añades tú', '#E8590C'],
+  ];
+  // tarjetas como las del "Mi día": así se ve tu día deslizando el dedo
+  const reel = [
+    ['clase', c[0][1], '09:00 · Clase', 'Física II'],
+    ['libre', 'var(--k-libre)', '15:30 · 2 h 15 min', 'Libre de verdad'],
+    ['deporte', '#E8590C', '18:00 · Entreno', 'Fútbol'],
+    ['estudio', 'var(--k-estudio)', '20:00 · Estudio', 'Química, 1 h'],
+  ];
+  const feats = [
+    ['clase', 'var(--k-clase)', 'Tu horario, sin teclear nada', 'Clases, aulas, festivos y exámenes oficiales de tu escuela.'],
+    ['libre', 'var(--k-libre)', 'Tu tiempo libre de verdad', 'Ya sin trayectos, comidas ni descansos.'],
+    ['deporte', '#E8590C', 'Tu vida también cuenta', 'Entrenos, trabajo o planes, en el mismo sitio.'],
+    ['estudio', 'var(--k-estudio)', 'El estudio, ya repartido', 'Cuánto y cuándo estudiar cada asignatura hasta el examen.'],
   ];
   const v = $('#view');
   v.innerHTML = `
     <div class="welcome-top">
     <section class="hero">
       <h1 class="hero-t">Tu quatri,<br>bajo control<span class="dot">.</span></h1>
-      <p class="lead">Quatri monta tu horario de la uni en dos minutos y te dice cuánto <b>tiempo libre te queda de verdad</b>: para estudiar, entrenar, trabajar o simplemente descansar.</p>
+      <p class="lead">Tu horario de la uni en dos minutos y cuánto <b>tiempo libre te queda de verdad</b>.</p>
     </section>
+    <div class="wreel" aria-label="Así se ve tu día en Quatri">${reel.map(([il, k, t, h]) => `
+      <div class="wcard" style="--k:${k}"><small>${t}</small><svg class="ill" viewBox="0 0 240 160" aria-hidden="true">${ILU[il]}</svg><b>${h}</b></div>`).join('')}
+    </div>
+    </div>
 
+    <div class="welcome-mid">
     <div class="demo" aria-label="Ejemplo de un día en Quatri">
-      <div class="demo-head"><span class="demo-t">Ejemplo · un martes cualquiera</span><span class="pill free-pill">3 h 45 min libres de verdad</span></div>
+      <div class="demo-head"><span class="demo-t">Un martes cualquiera</span><span class="pill free-pill">3 h 45 min libres de verdad</span></div>
       <ul class="timeline">${demo.map(([a, b, k, t, s, col]) => `
-        <li class="it ${k}" style="${col ? `--c:${col[1]};--cb:${col[0]}` : k === 'evento' ? '--ev:#E8590C' : ''}"><span class="t">${a}<br><small>${b}</small></span>
-        <span class="n"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span></li>`).join('')}</ul>
-    </div>
+        <li class="it ${k}" style="${col ? `--c:${col}` : ''}"><span class="t">${a}<small>${b}</small></span><span class="dot" aria-hidden="true"></span>
+        <span class="n"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span><span class="du"></span></li>`).join('')}</ul>
     </div>
 
+    <div>
     <h2 class="sec">Qué hace por ti</h2>
-    <div class="feats">
-      <div class="feat"><span class="num">01</span><div><b>Tu horario, sin teclear nada</b>
-        <p>Clases, aulas, festivos y exámenes del horario oficial.</p></div></div>
-      <div class="feat"><span class="num">02</span><div><b>Tu tiempo libre real</b>
-        <p>Descontando trayectos, comidas y descansos.</p></div></div>
-      <div class="feat"><span class="num">03</span><div><b>Tu vida también cuenta</b>
-        <p>Entrenos, trabajo o planes, en el mismo sitio.</p></div></div>
-      <div class="feat"><span class="num">04</span><div><b>Un plan de estudio a tu medida</b>
-        <p>Cuántas horas dedicar a cada asignatura. Tú decides.</p></div></div>
+    <div class="feats">${feats.map(([il, k, t, d]) => `
+      <div class="feat"><span class="fi" style="--k:${k}" aria-hidden="true"><svg class="ill" viewBox="0 0 240 160">${ILU[il]}</svg></span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
+    </div>
+    </div>
     </div>
 
-    <h2 class="sec">Cómo lo dejas listo</h2>
-    <p class="lead" style="margin-bottom:10px">Cinco pasos, unos dos minutos. Lo puedes cambiar todo después.</p>
+    <h2 class="sec">Listo en cinco pasos</h2>
     <ol class="howto">
-      <li><b>Tu escuela y tu grado</b><span>Para saber qué asignaturas y horarios cargar.</span></li>
-      <li><b>Tus asignaturas</b><span>Las de este cuatrimestre, aunque sean de cursos distintos.</span></li>
-      <li><b>Tus grupos</b><span>Tu subgrupo de laboratorio o problemas; la teoría se pone sola.</span></li>
-      <li><b>Revisa tu semana</b><span>Ves tu horario y te avisamos si alguna clase se pisa.</span></li>
-      <li><b>Tu día a día</b><span>Cuánto tardas en llegar, a qué hora comes, cenas y duermes.</span></li>
+      <li><b>Tu escuela y tu grado</b></li>
+      <li><b>Tus asignaturas</b><span>Aunque sean de cursos distintos.</span></li>
+      <li><b>Tus grupos</b><span>La teoría se pone sola.</span></li>
+      <li><b>Revisa tu semana</b><span>Te avisamos si alguna clase se pisa.</span></li>
+      <li><b>Tu día a día</b><span>Trayecto, comidas, cena y hora de dormir.</span></li>
     </ol>
 
     <div class="trust">
       <span>${ico('check')}Gratis y sin anuncios</span>
-      <span>${ico('check')}Con tu cuenta de Google o tu correo, lo tienes igual en el móvil y el ordenador</span>
-      <span>${ico('check')}Horarios oficiales del Visor d'Horaris UPC</span>
+      <span>${ico('check')}Con tu cuenta, lo tienes igual en el móvil y el ordenador</span>
+      <span>${ico('check')}Horarios oficiales de tu escuela</span>
     </div>
     <p class="hint" style="margin-top:12px">Ahora mismo, Quatri tiene los horarios de ${ESC.escuelas.length} escuelas de la UPC (${ESC.escuelas.map(e => esc(e.s)).join(', ')}) para el ${esc(D.periodo.curso.replace('-', '/'))} ${esc(D.periodo.q)}.</p>`;
   if (S.listo) {
@@ -964,28 +973,25 @@ function viewListo() {
   const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const tour = [
-    ['hoy', 'Hoy', 'Tu día hora a hora. Los huecos verdes son tiempo libre: tócalos para añadir algo. Desliza para cambiar de día.'],
-    ['cal', 'Calendario', 'Tu semana y tu mes de un vistazo, con festivos, semanas A/B y exámenes.'],
-    ['est', 'Estudio', 'Dinos cómo llevas cada asignatura y te proponemos cuántas horas dedicarle esta semana.'],
-    ['gear', 'Ajustes', 'Cambia tu rutina, grupos o asignaturas cuando quieras, y elige modo claro u oscuro.'],
+    ['hoy', 'Hoy', 'Tu día hora a hora. Toca lo de ahora y lo ves a pantalla completa.'],
+    ['cal', 'Calendario', 'Tu semana y tu mes, con festivos y exámenes.'],
+    ['est', 'Estudio', 'Qué toca estudiar cada día y cuánto.'],
+    ['plus', 'El botón +', 'Entrenos, trabajo o planes: se descuentan de tu tiempo libre.'],
   ];
   const v = $('#view');
   v.innerHTML = `
     <section class="hero">
       <h1 class="hero-t">Ya tienes<br>tu quatri<span class="dot">.</span></h1>
-      <p class="lead">Tus clases, exámenes y rutina ya están dentro. Esto es lo que te queda esta semana:</p>
+      <p class="lead">Tus clases, exámenes y rutina ya están dentro.</p>
     </section>
-    <div class="stats">
-      <div class="stat free"><b>${dur(freeMin)}</b><span>libres de verdad esta semana</span></div>
-      <div class="stat"><b>${classMin ? dur(classMin) : '—'}</b><span>de clase esta semana</span></div>
-      ${ex ? `<div class="stat wide" style="${colorVars(ex.c)}"><b>${exDays === 0 ? 'Hoy' : exDays === 1 ? 'Mañana' : `${exDays} días`}</b><span>para tu próximo examen: ${esc(subj(ex.c).n)}</span></div>` : ''}
+    <div class="listo-big" style="--k:var(--k-libre)">
+      <svg class="ill" viewBox="0 0 240 160" aria-hidden="true">${ILU.libre}</svg>
+      <div><b>${dur(freeMin)}</b><span>libres de verdad esta semana</span></div>
     </div>
+    <p class="daysum"><span><b>${classMin ? dur(classMin) : '0 h'}</b>de clase esta semana</span>${ex
+      ? `<span style="${colorVars(ex.c)}"><b>${exDays === 0 ? 'Hoy' : exDays === 1 ? 'Mañana' : `${exDays} días`}</b>al examen de ${esc(subj(ex.c).s || subj(ex.c).n)}</span>` : ''}</p>
     <h2 class="sec">Así se usa</h2>
-    <div class="feats">
-      ${tour.map(([ic, t, d]) => `<div class="feat"><span class="num ic" aria-hidden="true">${ico(ic)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
-      <div class="feat hi"><span class="num ic" aria-hidden="true">+</span><div><b>Añade tu vida</b>
-        <p>Con el botón + apuntas entrenos, trabajo o planes. Si les pones trayecto, también lo descontamos de tu tiempo libre.</p></div></div>
-    </div>
+    <ul class="tour">${tour.map(([ic, t, d]) => `<li><span class="ti" aria-hidden="true">${ico(ic)}</span><div><b>${t}</b><span>${d}</span></div></li>`).join('')}</ul>
     ${USER ? '' : `<section class="card stack" style="margin-top:14px"><b>Guarda tu quatri en tu cuenta</b>
       <span class="hint" style="margin:0">Así no lo pierdes si cambias de móvil y lo tienes también en el ordenador. Con Google es un toque.</span>
       <button class="btn" id="lsIn" style="align-self:flex-start">Entrar o crear cuenta</button></section>`}
@@ -1691,6 +1697,17 @@ function dayItems(p) {
   return [...p.blocks, ...p.free].sort((a, b) => a.s - b.s);
 }
 
+// Una tarjeta con dibujo para los días que lo merecen: todo el estudio de hoy hecho, o un día sin clases.
+function premio(p, items, esHoy) {
+  const card = (il, k, t, s) => `<div class="premio" style="--k:${k}"><span class="fi" aria-hidden="true"><svg class="ill" viewBox="0 0 240 160">${ILU[il]}</svg></span>
+    <div><b>${t}</b><span>${s}</span></div></div>`;
+  const quedaPlan = items.some(it => it.kind === 'plan'), hechos = items.filter(it => it.kind === 'estudio' && it.doneId).length;
+  if (esHoy && hechos && !quedaPlan) return card('hecho', 'var(--k-libre)', 'Hoy ya has hecho todo tu estudio', 'Lo que queda del día es tuyo.');
+  if (p.info.note === 'Fin de semana' && !p.classMin) return card('libre', 'var(--k-libre)', 'Fin de semana', p.freeMin ? `${dur(p.freeMin)} libres de verdad para ti.` : 'Sin clases.');
+  if (p.info.note === 'Día sin clases') return card('libre', 'var(--k-libre)', 'Hoy no hay clase', p.freeMin ? `Tienes ${dur(p.freeMin)} libres de verdad.` : 'Es festivo en tu escuela.');
+  return '';
+}
+
 function viewHoy() {
   S.dia = S.dia || dkey(new Date());
   const ds = S.dia, p = dayView(ds), d = p.info.d, today = dkey(new Date());
@@ -1742,7 +1759,8 @@ function viewHoy() {
       <div class="dstrip">${strip}</div>
       ${ahora}
       <p class="daysum"><span class="l"><b>${dur(p.freeMin)}</b>libres de verdad</span><span><b>${p.classMin ? dur(p.classMin) : '0 h'}</b>de clase</span><span><b>${dur(p.planMin || 0)}</b>de estudio</span></p>
-      ${p.info.note ? `<div class="notice warn">${esc(p.info.note)}</div>` : ''}
+      ${premio(p, items, ds === today)}
+      ${p.info.note && !['Fin de semana', 'Día sin clases'].includes(p.info.note) ? `<div class="notice warn">${esc(p.info.note)}</div>` : ''}
       ${p.exRut ? `<button class="notice exrut" id="exRutGo">Rutina de exámenes activa · <span>cambiarla</span>${ico('right')}</button>` : ''}
       ${p.allDay.map(x => `<div class="allday" style="--ev:${evColor(x.ev.tipo)}" data-ev="${x.id}"><b>${esc(x.ev.titulo)}</b><small>Todo el día${x.ev.lugar ? ' · ' + esc(x.ev.lugar) : ''}</small></div>`).join('')}
       ${!cur && vivos.length ? `<button class="btn feedbtn" data-feed="0">${ico('day')} Ver el día a pantalla completa</button>` : ''}
@@ -1852,6 +1870,8 @@ const ILU = {
   deporte: `<circle class="y" cx="200" cy="30" r="15"/><circle class="a" cx="76" cy="96" r="38"/><path class="sd" d="M38 96h76M76 58v76M50 70c16 14 16 38 0 52M102 70c-16 14-16 38 0 52"/>
     <rect class="b" x="140" y="92" width="76" height="8" rx="4"/><rect class="a" x="140" y="74" width="14" height="44" rx="5"/><rect class="a" x="202" y="74" width="14" height="44" rx="5"/>
     <rect class="c" x="128" y="82" width="10" height="28" rx="4"/><rect class="c" x="218" y="82" width="10" height="28" rx="4"/><rect class="d" x="20" y="140" width="200" height="8" rx="4"/>`,
+  hecho: `<circle class="y" cx="120" cy="70" r="46"/><circle class="d" cx="120" cy="70" r="34"/><path class="sa" d="M100 70l14 14 26-28"/>
+    <path class="b" d="M92 108l-16 40 22-8 12 18 10-38zM148 108l16 40-22-8-12 18-10-38z"/><circle class="a" cx="40" cy="36" r="4"/><circle class="a" cx="204" cy="40" r="5"/><circle class="b" cx="196" cy="110" r="4"/><circle class="b" cx="30" cy="104" r="3"/>`,
   viaje: `<rect class="a" x="62" y="50" width="116" height="86" rx="12"/><path class="sa" d="M98 50V34h44v16"/><rect class="y" x="62" y="80" width="116" height="10"/><circle class="d" cx="84" cy="142" r="7"/><circle class="d" cx="156" cy="142" r="7"/>`,
   evento: `<rect class="a" x="56" y="30" width="128" height="110" rx="12"/><rect class="d" x="56" y="30" width="128" height="30" rx="12"/><path class="sa" d="M86 20v20M154 20v20"/>
     <path class="y" d="M120 74l9 18 20 3-14 14 3 20-18-9-18 9 3-20-14-14 20-3z"/>`

@@ -117,8 +117,9 @@ details.opt summary{cursor:pointer;color:var(--accent);font-weight:500;font-size
 .gchips{display:flex;flex-wrap:wrap;gap:8px}
 .gchip{min-width:54px;height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-family:var(--mono);font-weight:500}
 .gchip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
-.gsubj{display:grid;grid-template-columns:10px 1fr;gap:12px;align-items:start}
-.gsubj .bar{width:6px;border-radius:3px;background:var(--c);align-self:stretch}
+.gsubj{display:grid;grid-template-columns:12px 1fr;gap:12px;align-items:start}
+/* punto del color de la asignatura (como en la lista del día), no una franja */
+.gsubj .bar{width:12px;height:12px;border-radius:50%;background:var(--c);margin-top:5px}
 .gsubj select{width:100%;height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 10px;margin-top:6px}
 .gsubj .sum{font-size:12.5px;color:var(--muted);margin-top:6px;font-family:var(--mono)}
 .need{color:var(--warn);font-size:13px;margin-top:4px}
@@ -602,6 +603,40 @@ ul.plain{margin:0;padding-left:18px;font-size:14px;display:flex;flex-direction:c
 .demo .it .n{padding:7px 10px}
 .demo .it .n b{font-size:14px}
 .demo .it .n small{font-size:11.5px}
+/* bienvenida: tarjetas como las del "Mi día", que se deslizan de lado */
+.wreel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:16px -16px 6px;padding:4px 16px 14px;scrollbar-width:none}
+.wreel::-webkit-scrollbar{display:none}
+.wcard{flex:0 0 172px;height:232px;scroll-snap-align:start;border-radius:22px;background:var(--k);color:#fff;padding:14px;display:flex;flex-direction:column;box-shadow:0 10px 24px rgb(20 22 27/.14)}
+.wcard small{align-self:flex-start;background:rgb(0 0 0/.18);padding:4px 9px;border-radius:99px;font-size:12px;font-weight:800}
+.wcard .ill{width:100%;height:auto;margin:auto 0 8px}
+.wcard b{font-family:var(--display);font-size:22px;font-weight:900;letter-spacing:-.03em;line-height:1}
+@media (min-width:900px){.wreel{margin:16px 0 6px;padding:4px 0 14px;overflow:visible}.wcard{flex:1 1 0}
+  .welcome-mid{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start}
+  .welcome-mid .feats{grid-template-columns:1fr}
+  .welcome-mid .sec:first-child{margin-top:6px}}
+/* "Ya tienes tu quatri": la cifra de tiempo libre en grande, como una tarjeta del "Mi día" */
+.listo-big{display:flex;align-items:center;gap:16px;background:var(--k);color:#fff;border-radius:24px;padding:16px 20px;margin:4px 0 12px}
+.listo-big .ill{flex:none;width:120px;height:80px}
+.listo-big b{display:block;font-family:var(--display);font-size:44px;font-weight:900;letter-spacing:-.04em;line-height:1}
+.listo-big span{display:block;font-weight:700;opacity:.9;margin-top:4px}
+.tour{list-style:none;margin:0;padding:4px 16px;background:var(--surface);border-radius:22px}
+.tour li{display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.tour li:last-child{border-bottom:0}
+.tour .ti{flex:none;width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.tour .ti .ico{width:20px;height:20px}
+.tour b{display:block;font-weight:800}
+.tour div span{display:block;color:var(--muted);font-size:14px}
+.premio{display:flex;gap:14px;align-items:center;background:color-mix(in srgb,var(--k) 12%,var(--surface));border-radius:20px;padding:12px 14px;margin:0 0 12px}
+.premio .fi{flex:none;width:76px;height:60px;border-radius:14px;background:var(--k);display:grid;place-items:center;padding:4px}
+.premio .fi .ill{width:100%;height:100%}
+.premio b{display:block;font-family:var(--display);font-size:17px;font-weight:800;letter-spacing:-.01em}
+.premio div span{display:block;color:var(--muted);font-size:14px;margin-top:2px}
+.feat .fi{flex:none;width:64px;height:52px;border-radius:14px;background:var(--k);display:grid;place-items:center;padding:4px}
+.feat .fi .ill{width:100%;height:100%}
+.demo .timeline{padding:0 4px;background:none;box-shadow:none}
+.demo .it{grid-template-columns:44px 10px minmax(0,1fr);cursor:default}
+.demo .it .dot{width:10px;height:10px}
+.demo .it .du{display:none}
 .feats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
 .feat{display:flex;gap:14px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
 .feat b{font-family:var(--display);font-weight:800;font-size:16.5px;letter-spacing:-.01em;display:block}
