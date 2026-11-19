@@ -616,13 +616,15 @@ function viewAsignaturas() {
     <h1>¿Qué asignaturas haces este cuatrimestre?</h1>
     <p class="lead">Marca tu curso con un toque y añade o quita las que no encajen.</p>
     ${avisoCambio()}
-    <input class="search" id="q" type="search" placeholder="Buscar asignatura" autocomplete="off">
+    <input class="search" id="q" type="search" placeholder="Buscar asignatura" aria-label="Buscar asignatura" autocomplete="off">
     <div id="list"></div>`;
   const draw = () => {
-    const q = $('#q').value.trim().toLowerCase();
+    // sin acentos ni mayúsculas: «fisica» encuentra «Física» y «calcul», «Càlcul»
+    const norm = t => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const q = norm($('#q').value.trim());
     const row = code => {
       const a = subj(code), on = S.asignaturas.includes(code);
-      if (q && !(a.n.toLowerCase().includes(q) || (a.s || '').toLowerCase().includes(q))) return '';
+      if (q && !(norm(a.n).includes(q) || norm(a.s).includes(q))) return '';
       return `<label class="subj ${on ? 'on' : ''}">
         <input type="checkbox" data-c="${code}" ${on ? 'checked' : ''}>
         <span class="nm"><b>${esc(a.n)}</b><small>${esc(a.s)}${a.t === 'OP' ? ' · optativa' : ''}${hasSchedule(code) ? '' : ' · sin horario de clases'}</small></span>
@@ -646,16 +648,19 @@ function viewAsignaturas() {
         ${op.length ? `<details class="opt" ${q || op.some(x => S.asignaturas.includes(x)) ? 'open' : ''}><summary>Optativas (${op.length})</summary>${opHtml}</details>` : ''}
       </section>`;
     }).join('') || '<p class="lead">No hay ninguna asignatura con ese nombre.</p>';
+    // con la app ya en marcha cada cambio se guarda al momento, así que no se puede quedar en cero asignaturas
+    const setAsig = list => {
+      if (S.listo && !list.length) { toast('Deja al menos una asignatura: sin ninguna, Quatri no tiene clases que organizar.'); draw(); return; }
+      S.asignaturas = list; save(); draw(); bar();
+    };
     $('#list').querySelectorAll('[data-c]').forEach(cb => cb.onchange = () => {
       const c = cb.dataset.c;
-      S.asignaturas = cb.checked ? [...S.asignaturas, c] : S.asignaturas.filter(x => x !== c);
-      save(); draw(); bar();
+      setAsig(cb.checked ? [...S.asignaturas, c] : S.asignaturas.filter(x => x !== c));
     });
     $('#list').querySelectorAll('[data-all]').forEach(b => b.onclick = () => {
       const ob = byCurso[b.dataset.all].filter(x => subj(x).t !== 'OP' && subj(x).v === nowLevel(b.dataset.all));
       const allOn = ob.every(x => S.asignaturas.includes(x));
-      S.asignaturas = allOn ? S.asignaturas.filter(x => !ob.includes(x)) : [...new Set([...S.asignaturas, ...ob])];
-      save(); draw(); bar();
+      setAsig(allOn ? S.asignaturas.filter(x => !ob.includes(x)) : [...new Set([...S.asignaturas, ...ob])]);
     });
   };
   const bar = () => {
@@ -757,9 +762,9 @@ function weekGrid(list, clashSet = new Set()) {
     items.forEach(it => { it.n = Math.max(1, ...items.filter(o => o.a < it.b && it.a < o.b).map(o => o.k + 1)); });
     cols.push(`<div class="wk-col" style="height:${H}px;--hpx:${hpx}px">${items.map(({ s, i, a, b, k, n }) => {
       const sub = subj(s.code), x = s.x, w = 100 / n;
-      return `<div class="blk ${clashSet.has(i) ? 'clash' : ''}" style="${colorVars(s.code)};top:${px(a) + 1}px;height:${Math.max(px(b) - px(a) - 2, 18)}px;left:calc(${k * w}% + 2px);width:calc(${w}% - 4px)" title="${esc(sub.n)} · ${TYPE[x[3]] || x[3]} · grupo ${esc(s.group)} · ${x[1]}–${x[2]} · ${esc(x[4])}">
+      return `<div class="blk ${clashSet.has(i) ? 'clash' : ''}" style="${colorVars(s.code)};top:${px(a) + 1}px;height:${Math.max(px(b) - px(a) - 2, 18)}px;left:calc(${k * w}% + 2px);width:calc(${w}% - 4px)" title="${esc([sub.n, TYPE[x[3]] || x[3], `grupo ${s.group}`, `${x[1]}–${x[2]}`, x[4]].filter(Boolean).join(' · '))}">
         ${x[5] && x[5].length === 1 ? `<span class="ab">${x[5]}</span>` : ''}
-        <b>${esc(sub.s)} ${x[3]}</b><small>${hh(x[1])}–${hh(x[2])} · ${esc(s.group)}</small><small>${esc(x[4].replace(/ - Lab\..*/, ''))}</small></div>`;
+        <b>${esc(sub.s)} ${x[3]}</b><small>${hh(x[1])}–${hh(x[2])} · ${esc(s.group)}</small>${x[4] ? `<small>${esc(x[4].replace(/ - Lab\..*/, ''))}</small>` : ''}</div>`;
     }).join('')}</div>`);
   }
   let hours = ''; for (let h = h0 + 1; h < h1; h++) hours += `<span style="top:${(h - h0) * hpx}px">${h}:00</span>`;
@@ -770,14 +775,16 @@ function weekGrid(list, clashSet = new Set()) {
 }
 function viewSemana() {
   const list = mySessions();
-  const cl = clashes(list);
+  // los solapes, de lunes a domingo y por hora
+  const cl = clashes(list).sort(([a], [b]) => a.x[0] - b.x[0] || toMin(a.x[1]) - toMin(b.x[1]));
+  const ab = list.some(({ x }) => x[5] && x[5].length === 1); // solo si hay laboratorios de semanas A/B
   const clashSet = new Set(cl.flatMap(([a, b]) => [list.indexOf(a), list.indexOf(b)]));
   const mins = list.reduce((s, { x }) => s + (x[5] && x[5].length === 1 ? 0.5 : 1) * (toMin(x[2]) - toMin(x[1])), 0);
   const exams = S.asignaturas.flatMap(c => subj(c).e.map(e => ({ c, e }))).filter(o => o.e[0] === 'final').sort((a, b) => a.e[1].localeCompare(b.e[1]));
   const v = $('#view');
   v.innerHTML = `
     <h1>Tu semana de clases</h1>
-    <p class="lead">A y B son laboratorios de semanas alternas. Toca un bloque para ver el detalle.</p>
+    <p class="lead">${ab ? 'A y B son laboratorios de semanas alternas. ' : ''}Toca un bloque para ver el detalle.</p>
     ${avisoCambio()}
     <p class="daysum"><span><b>${S.asignaturas.length}</b>asignaturas</span><span><b>${num(Math.round(mins / 60 * 10) / 10)} h</b>de clase a la semana</span><span><b>${exams.length}</b>finales</span></p>
     ${cl.length ? `<div class="notice bad" style="margin-top:14px"><b>Hay clases que se pisan.</b> Revisa los grupos:<ul>${cl.map(([a, b]) =>
@@ -852,6 +859,7 @@ function viewRutina() {
         <div class="fields">${time('dormir', 'Te vas a dormir a las', R.dormir)}</div>
         <label class="check"><input type="checkbox" id="estudiaNoche" ${R.estudiaNoche ? 'checked' : ''}> Estudio después de cenar</label>
         <small class="hint">Si no lo marcas, de la cena a la hora de dormir es tiempo libre para ti: no te ponemos estudio ahí.</small>
+        <p class="notice" id="nNoche" hidden></p>
       </section>
     </div>`;
   const read = () => {
@@ -864,8 +872,16 @@ function viewRutina() {
     S.estPref = $('#estPref').value;
     // estudiar por la noche implica poder estudiar después de cenar
     if (S.estPref === 'noche' && !R.estudiaNoche) { R.estudiaNoche = true; $('#estudiaNoche').checked = true; toast('Marcado «Estudio después de cenar» para poder estudiar por la noche'); }
-    save();
+    save(); avisoNoche();
   };
+  // si te vas a dormir antes de acabar de cenar, la cena no cabe en el día y desaparecería sin más: se avisa
+  const avisoNoche = () => {
+    let sl = toMin(R.dormir || '00:00'); if (sl < 6 * 60) sl += 1440;
+    const finCena = toMin(R.cena) + Number(R.cenaDur), n = $('#nNoche');
+    n.hidden = finCena <= sl;
+    n.textContent = n.hidden ? '' : `Así no te da tiempo a cenar: acabas a las ${fmt(finCena % 1440)} y te vas a dormir a las ${R.dormir}. Pon la cena antes o acuéstate más tarde.`;
+  };
+  avisoNoche();
   v.querySelectorAll('input,select').forEach(el => el.onchange = read);
   $('#addAcad').onclick = () => openEvent(null, null, 17 * 60, 18 * 60 + 30, 'academia');
   v.querySelectorAll('[data-acad]').forEach(b => b.onclick = () => openEvent(b.dataset.acad));
@@ -982,7 +998,7 @@ function viewListo() {
   v.innerHTML = `
     <section class="hero">
       <h1 class="hero-t">Ya tienes<br>tu quatri<span class="dot">.</span></h1>
-      <p class="lead">Tus clases, exámenes y rutina ya están dentro.</p>
+      <p class="lead">${(S.asignaturas || []).some(c => examsOf(c).length) ? 'Tus clases, exámenes y rutina ya están dentro.' : 'Tus clases y tu rutina ya están dentro.'}</p>
     </section>
     <div class="listo-big" style="--k:var(--k-libre)">
       <svg class="ill" viewBox="0 0 240 160" aria-hidden="true">${ILU.libre}</svg>
@@ -1173,7 +1189,7 @@ function openClase(ds, ck) {
   ov.innerHTML = `
     <form class="sheet" novalidate style="${colorVars(s.code)}">
       <header><h2>${esc(a.n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
-      <p class="hint" style="margin:-6px 0 0">${TYPE[x[3]] || x[3]} · ${x[1]}–${x[2]} · grupo ${esc(s.group)} · ${esc(x[4].replace(/ - Lab\..*/, ''))}</p>
+      <p class="hint" style="margin:-6px 0 0">${esc([TYPE[x[3]] || x[3], `${x[1]}–${x[2]}`, `grupo ${s.group}`, (x[4] || '').replace(/ - Lab\..*/, '')].filter(Boolean).join(' · '))}</p>
       <div class="field"><span>El ${dia} ${d.getDate()} de ${MONTHS[d.getMonth()]}</span>
         <div class="seg2" role="group" style="margin:0">
           <button type="button" data-hoy="voy">Voy a clase</button>
@@ -1506,7 +1522,7 @@ function dayPlan(ds) {
       const x = s.x;
       if (tapada(s)) continue;
       const ck = clsKey(s), f = clsSkip(ds, ck);
-      const base = { s: toMin(x[1]), e: toMin(x[2]), code: s.code, ck, label: `${subj(s.code).n}`, sub: `${TYPE[x[3]] || x[3]} · grupo ${s.group} · ${x[4].replace(/ - Lab\..*/, '')}` };
+      const base = { s: toMin(x[1]), e: toMin(x[2]), code: s.code, ck, label: `${subj(s.code).n}`, sub: [TYPE[x[3]] || x[3], `grupo ${s.group}`, (x[4] || '').replace(/ - Lab\..*/, '')].filter(Boolean).join(' · ') };
       if (!f) { blocks.push({ ...base, kind: 'clase' }); continue; }
       // no vas a esta clase: queda libre o la cambias por estudio (en casa o en la uni)
       skipped.push({ ...base, kind: 'saltada', siempre: f.siempre });
@@ -1546,7 +1562,8 @@ function dayPlan(ds) {
         end = Math.max(end, b.e);
       }
     }
-    wake = first - T - P;
+    // te levantas a tu hora de siempre; solo antes si la primera clase no te da tiempo (la mañana libre también cuenta)
+    wake = Math.min(first - T - P, R.despertarLibre ? toMin(R.despertarLibre) : Infinity);
   } else wake = toMin(R.despertarLibre);
   // el estudio en casa no puede coincidir con el trayecto a la uni: se recorta (y si no queda nada, se quita)
   for (const b of blocks.filter(b => b.kind === 'estudio' && !b.uni)) {
@@ -1570,7 +1587,7 @@ function dayPlan(ds) {
     blocks.push({ s: x.s, e: vj === 'ida' ? Math.max(sleep, x.s + 15) : x.e, kind: 'evento', id: x.id, tipo: x.ev.tipo, label: x.ev.titulo, viaje: vj,
       sub: vj === 'ida' ? ['Viaje', `te vas a las ${x.ev.ini}`, x.ev.lugar].filter(Boolean).join(' · ')
         : vj === 'vuelta' ? ['Viaje', `vuelves a las ${x.ev.fin}`, x.ev.lugar].filter(Boolean).join(' · ')
-        : x.ev.tipo === 'academia' ? ['Academia', subj(x.ev.asig)?.n, x.ev.modo === 'online' ? 'online' : 'presencial', x.ev.lugar].filter(Boolean).join(' · ')
+        : x.ev.tipo === 'academia' ? [/^(academia)?$/i.test((x.ev.titulo || '').trim()) ? '' : 'Academia', subj(x.ev.asig)?.n, x.ev.modo === 'online' ? 'online' : 'presencial', x.ev.lugar].filter(Boolean).join(' · ')
         : [EV_NAME[x.ev.tipo], x.ev.lugar, x.ev.repite ? 'cada semana' : ''].filter(Boolean).join(' · ') });
     if (Te) {
       blocks.push({ s: x.s - Te, e: x.s, kind: 'trayecto', label: `Ida · ${x.ev.titulo}` });
@@ -2344,6 +2361,9 @@ function weekSchedule(monKey) {
   for (const [id, f] of Object.entries(S.estFijo || {})) {
     const d = days.find(x => x.ds === f.ds);
     if (!d || !subj(f.code)) continue;
+    // si después has puesto algo encima (un evento, la comida que se ha movido...), ese rato ya no está libre:
+    // no se deja debajo, sus horas vuelven a repartirse en otro hueco. Se guarda, por si lo de encima desaparece.
+    if (!d.p.free.some(g => g.s <= f.s && f.e <= g.e)) continue;
     d.gaps = d.gaps.flatMap(g => g.e <= f.s || g.s >= f.e ? [g] : [{ s: g.s, e: f.s }, { s: f.e, e: g.e }]).filter(g => g.e - g.s >= 30);
     d.cap = Math.max(0, d.cap - (f.e - f.s));
     if (pend[f.code] != null) pend[f.code] -= f.e - f.s;
@@ -2522,9 +2542,9 @@ function openCuanto() {
     <div class="seg2" role="group" style="margin:0">${NIVELES.map(([f, t]) => `<button type="button" data-niv="${f}">${t}<small data-nh="${f}"></small></button>`).join('')}</div>
     <small class="hint" id="cHint"></small>
     <div class="adj-row"><span class="adj-n">Máximo al día<small>De lunes a viernes</small></span>
-      <div class="stepper"><button type="button" data-st="s,-0.5" aria-label="Menos">−</button><output id="cS"></output><button type="button" data-st="s,0.5" aria-label="Más">+</button></div></div>
+      <div class="stepper"><button type="button" data-st="s,-0.5" aria-label="Media hora menos al día, de lunes a viernes">−</button><output id="cS"></output><button type="button" data-st="s,0.5" aria-label="Media hora más al día, de lunes a viernes">+</button></div></div>
     <div class="adj-row"><span class="adj-n">Máximo al día<small>Sábado y domingo</small></span>
-      <div class="stepper"><button type="button" data-st="f,-0.5" aria-label="Menos">−</button><output id="cF"></output><button type="button" data-st="f,0.5" aria-label="Más">+</button></div></div>
+      <div class="stepper"><button type="button" data-st="f,-0.5" aria-label="Media hora menos al día, sábado y domingo">−</button><output id="cF"></output><button type="button" data-st="f,0.5" aria-label="Media hora más al día, sábado y domingo">+</button></div></div>
     <footer><span class="sp"></span><button type="submit" class="btn primary">Guardar</button></footer>`);
   // horas que daría cada opción esta semana (con los máximos que tengas puestos en la ventana)
   const prevista = () => {
@@ -2580,7 +2600,12 @@ function porQue(r) {
   const p = [];
   if (r.a.cr) p.push(`${num(r.a.cr)} créditos`);
   if (r.cu === 'cuesta') p.push('te cuesta (+35 %)'); else if (r.cu === 'bien') p.push('la llevas bien (−30 %)');
-  if (r.ex) p.push(`${exName(r.ex).toLowerCase()} en ${r.daysTo} días${r.urg > 1.04 ? ` (+${Math.round((r.urg - 1) * 100)} %)` : ''}`);
+  if (r.ex) {
+    // días contados desde hoy (r.daysTo cuenta desde el lunes de la semana, solo sirve para el cálculo)
+    const fx = dparse(r.ex[1]), n = Math.round((fx - dparse(dkey(new Date()))) / 864e5);
+    const cuando = n < 0 ? `fue el ${fx.getDate()}/${fx.getMonth() + 1}` : n === 0 ? 'hoy' : n === 1 ? 'mañana' : `en ${n} días`;
+    p.push(`${exName(r.ex).toLowerCase()} ${cuando}${r.urg > 1.04 ? ` (+${Math.round((r.urg - 1) * 100)} %)` : ''}`);
+  }
   return p.join(' · ');
 }
 function openTemario(code) { S.temCode = code; save(); go('temario'); }
@@ -2605,7 +2630,7 @@ async function viewTemario() {
     ${r && r.lv !== 'no' ? `<div class="field" style="margin:0 0 6px"><span>¿Cómo la llevas?</span>
         <div class="seg2" role="group" style="margin:0">${CUESTA.map(([k, t]) => `<button data-cu="${k}" aria-pressed="${(r.cu || '') === k}">${t}</button>`).join('')}</div></div>
       <div class="adj-row"><span class="adj-n">Horas de estudio<small style="white-space:normal">${r.manual ? 'Puestas por ti' : porQue(r)}</small></span>
-        <div class="stepper"><button data-m aria-label="Menos">−</button><output>${hfmt(r.horas)}</output><button data-p aria-label="Más">+</button></div></div>
+        <div class="stepper"><button data-m aria-label="Media hora menos de estudio de ${esc(a.n)}">−</button><output>${hfmt(r.horas)}</output><button data-p aria-label="Media hora más de estudio de ${esc(a.n)}">+</button></div></div>
       <div class="row" style="gap:14px;flex-wrap:wrap">${r.manual ? '<button class="link" id="tAuto">Que lo calcule Quatri</button>' : ''}<button class="link" id="tNo">No la estudio</button></div>`
       : `<p class="hint" style="margin:0 0 6px">${examsOf(code).length ? 'No le pones horas de estudio.' : 'No tiene examen: no te ponemos horas de estudio.'}</p>
          <button class="btn small" id="tSi">La estudio</button>`}
@@ -2863,9 +2888,33 @@ async function start() {
   S.dia = dkey(new Date()); // al abrir la app, siempre empieza en hoy
   applyTheme();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
-  window.addEventListener('hashchange', render);
+  // si miraste otra escuela en «¿Qué estudias?» y sales sin tocar un grado (p. ej. con el «atrás» del móvil),
+  // vuelve a cargar la tuya antes de pintar: si no, Hoy, Calendario y Ajustes fallan con los datos de la otra
+  window.addEventListener('hashchange', async () => {
+    if (S.escuela && D._id !== S.escuela && current() !== 'grado') {
+      try { await loadEscuela(S.escuela); } catch { toast('No se han podido cargar los horarios de tu escuela.'); }
+    }
+    render();
+  });
   render();
   initCuenta();
+  accesibleTeclado();
+}
+// Las filas de Hoy y los bloques del calendario se tocan, pero no son botones: se les da papel de botón
+// para que se puedan alcanzar con el teclado y los lectores de pantalla, y Intro o Espacio los abren.
+function accesibleTeclado() {
+  const SEL = '.timeline li.it, .cblk, .blk';
+  const marca = () => $('#view').querySelectorAll(SEL).forEach(el => {
+    if (el.hasAttribute('tabindex')) return;
+    el.setAttribute('role', 'button'); el.tabIndex = 0;
+    const t = el.dataset.info || el.title; if (t) el.setAttribute('aria-label', t);
+  });
+  new MutationObserver(marca).observe($('#view'), { childList: true, subtree: true });
+  marca();
+  document.addEventListener('keydown', e => {
+    const el = e.target;
+    if ((e.key === 'Enter' || e.key === ' ') && el.matches?.(SEL) && el.getAttribute('role') === 'button') { e.preventDefault(); el.click(); }
+  });
 }
 start();
 

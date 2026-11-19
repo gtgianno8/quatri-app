@@ -443,6 +443,8 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .eday.hoy{color:var(--fg)}
 .erow{display:flex;align-items:center;gap:10px}
 .eck{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);background:transparent;flex:none;display:grid;place-items:center;font-weight:800;font-size:15px;color:var(--fg)}
+.eck{position:relative}
+.eck::before{content:"";position:absolute;inset:-8px} /* zona táctil de 46 px aunque el círculo mida 30 */
 .eck:hover{border-color:var(--c)}
 .eck.on{background:var(--c);border-color:var(--c);color:#fff}
 .emain,.asrow{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);text-align:left;font-size:16px}

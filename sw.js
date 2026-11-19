@@ -1,6 +1,6 @@
 // Service worker: la app funciona sin conexión una vez abierta.
 // Cambia VERSION cada vez que publiques cambios para que los móviles se actualicen.
-const VERSION = 'quatri-v0.74';
+const VERSION = 'quatri-v0.75';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'data/escuelas.json'];
 // los horarios, temarios y evaluación de cada escuela se guardan al usarlos (ver fetch)
 
@@ -34,8 +34,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     fetch(e.request.url, { cache: 'no-cache' }).then(r => {
-      const copy = r.clone();
-      caches.open(VERSION).then(c => c.put(e.request, copy));
+      // solo se guardan las respuestas buenas: un 404 o un error no debe quedarse en la caché
+      if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
       return r;
     }).catch(() => caches.match(e.request))
   );
