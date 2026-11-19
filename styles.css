@@ -362,6 +362,17 @@ h2.sec{font-size:18px;margin:22px 0 4px}
 .exrow small{display:block;color:var(--muted);font-size:12.5px}
 .exrow:not([data-exid]){cursor:default}
 .exrow.past{opacity:.5}
+/* notas de la asignatura */
+.nota-row{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);border-left:4px solid var(--c)}
+.nota-row>span{flex:1;min-width:0}
+.nota-row b{display:block;font-weight:700;overflow-wrap:anywhere}
+.nota-row small{display:block;color:var(--muted);font-size:12.5px}
+.nota-in{width:64px;height:44px;flex:none;text-align:center;font-family:var(--mono);font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--fg)}
+.np-row{display:flex;align-items:center;gap:8px}
+.np-row input{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:0 10px;color:var(--fg);font-size:16px}
+.np-row [data-pn]{flex:1;min-width:0}
+.np-p{display:flex;align-items:center;gap:4px;flex:none;color:var(--muted)}
+.np-p input{width:58px;text-align:center;font-family:var(--mono)}
 .finalmodo{margin-top:8px}
 .xtemas{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
 .xtemas .check{font-size:14px}

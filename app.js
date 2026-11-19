@@ -2268,7 +2268,8 @@ function classWeeks() {
 function nextExam(code, fromKey) {
   return examsOf(code).filter(e => e[1] >= fromKey).sort((a, b) => a[1].localeCompare(b[1]))[0] || null;
 }
-const CUESTA = [['cuesta', 'Me cuesta'], ['', 'Normal'], ['bien', 'La llevo bien']];
+// 'normal' guardado = lo has elegido tú; sin nada guardado, lo deciden tus notas (si hay)
+const CUESTA = [['cuesta', 'Me cuesta'], ['normal', 'Normal'], ['bien', 'La llevo bien']];
 const CUESTA_F = { cuesta: 1.35, bien: 0.7 };
 function weekPlan(monKey) {
   S.estudio = S.estudio || { nivel: {}, ajuste: {} };
@@ -2292,9 +2293,10 @@ function weekPlan(monKey) {
     // el examen pesa poco a poco: desde 6 semanas antes sube cada día, hasta +80 % (finales y parciales) o +40 % (controles y entregas)
     const amp = ex && (ex[0] === 'final' || ex[0] === 'parcial') ? 0.8 : 0.4;
     const urg = daysTo == null ? 1 : 1 + amp * Math.max(0, 1 - daysTo / 42);
-    // cómo la llevas: lo dice el alumno (me cuesta +35 %, la llevo bien -30 %)
-    const cu = (E.cuesta || {})[c], fc = CUESTA_F[cu] ?? 1;
-    return { c, a, lv, oficial, ex, daysTo, need: null, urg, cu, w: oficial * urg * fc };
+    // cómo la llevas: lo dice el alumno (me cuesta +35 %, la llevo bien -30 %); si no lo ha dicho, sus notas
+    const cm = (E.cuesta || {})[c], cn = cm ? null : notasCuesta(c);
+    const cu = cm || cn?.cu || '', fc = CUESTA_F[cu] ?? 1;
+    return { c, a, lv, oficial, ex, daysTo, need: null, urg, cu, cuNotas: cn, w: oficial * urg * fc };
   });
   const oficialTotal = rows.filter(r => r.lv !== 'no').reduce((n, r) => n + r.oficial, 0);
   // lo ya hecho ocupó huecos libres, así que se suma al tiempo disponible.
@@ -2599,7 +2601,9 @@ async function loadEval() {
 function porQue(r) {
   const p = [];
   if (r.a.cr) p.push(`${num(r.a.cr)} créditos`);
-  if (r.cu === 'cuesta') p.push('te cuesta (+35 %)'); else if (r.cu === 'bien') p.push('la llevas bien (−30 %)');
+  const porNotas = r.cuNotas ? `por tus notas (media ${fmtNota(r.cuNotas.med)}), ` : '';
+  if (r.cu === 'cuesta') p.push(`${porNotas}te cuesta (+35 %)`); else if (r.cu === 'bien') p.push(`${porNotas}la llevas bien (−30 %)`);
+  else if (porNotas) p.push(`por tus notas (media ${fmtNota(r.cuNotas.med)}), vas normal`);
   if (r.ex) {
     // días contados desde hoy (r.daysTo cuenta desde el lunes de la semana, solo sirve para el cálculo)
     const fx = dparse(r.ex[1]), n = Math.round((fx - dparse(dkey(new Date()))) / 864e5);
@@ -2609,6 +2613,100 @@ function porQue(r) {
   return p.join(' · ');
 }
 function openTemario(code) { S.temCode = code; save(); go('temario'); }
+
+/* ---------- notas de cada asignatura ----------
+   Las partes de la evaluación y su peso salen de la guía docente (EV), y el alumno las puede cambiar.
+   Con las notas que apunta, Quatri sabe cómo la lleva y ajusta sus horas de estudio (como «Me cuesta» / «La llevo bien»).
+   S.notas[código] = { partes: [{ n: nombre, p: peso en %, nota: 0–10 o null }], propio: true si cambió las partes } */
+const fmtNota = n => num(Math.round(n * 10) / 10);
+function partesGuia(c) {
+  return String((EV[c] || [])[1] || '').split(' · ').map(t => t.trim().match(/^(.*?)\s*(\d+(?:[.,]\d+)?)\s*%$/)).filter(Boolean)
+    .map((m, i) => {
+      let n = m[1].trim(); if (!n.includes('(')) n = n.replace(/\)/g, ''); // paréntesis sueltos que vienen mal de la guía
+      return { n: n.replace(/^[\s.:;,-]+|[\s.:;,(-]+$/g, '').trim() || `Parte ${i + 1}`, p: Number(m[2].replace(',', '.')), nota: null };
+    });
+}
+const partesDe = c => (S.notas || {})[c]?.partes || partesGuia(c);
+function notasResumen(c) {
+  const P = (S.notas || {})[c]?.partes || [];
+  const tot = P.reduce((n, x) => n + (Number(x.p) || 0), 0), hechas = P.filter(x => x.nota != null);
+  const ph = hechas.reduce((n, x) => n + Number(x.p), 0);
+  if (!tot || !ph) return null;
+  const pts = hechas.reduce((n, x) => n + x.nota * x.p, 0), resto = tot - ph;
+  // nota media de lo evaluado, qué parte del total ya está, y qué hace falta en lo que queda para el 5
+  return { med: pts / ph, ev: ph / tot, nec: resto > 0 ? (5 * tot - pts) / resto : null, final: resto > 0 ? null : pts / tot };
+}
+// cómo la llevas según tus notas: suspendiendo, o necesitando más de un 7 en lo que queda, te cuesta;
+// con más de un 7,5 de media y el aprobado casi hecho, la llevas bien. Con la asignatura ya acabada, nada.
+function notasCuesta(c) {
+  const R = notasResumen(c); if (!R || R.final != null) return null;
+  const cu = R.med < 5 || R.nec > 7 ? 'cuesta' : R.med >= 7.5 && R.nec <= 4 ? 'bien' : 'normal';
+  return { ...R, cu };
+}
+function notasHtml(code) {
+  const P = partesDe(code), R = notasResumen(code), propio = (S.notas || {})[code]?.propio;
+  if (!P.length) return `<p class="hint" style="margin:0 0 8px">${EV[code] ? 'La guía docente no dice cuánto pesa cada parte.' : 'No tenemos la guía docente de esta asignatura.'} Añade las partes y su peso para apuntar tus notas.</p>
+    <button class="btn small" id="nEdit">Añadir partes</button>`;
+  const tot = P.reduce((n, x) => n + (Number(x.p) || 0), 0);
+  const res = !R ? 'Apunta tus notas cuando las tengas: Quatri ajusta tus horas de estudio según cómo te va.'
+    : R.final != null ? `Tu nota final: <b>${fmtNota(R.final)}</b>`
+    : `Llevas un <b>${fmtNota(R.med)}</b> en el ${Math.round(R.ev * 100)} % ya evaluado. ${R.nec <= 0 ? 'Ya tienes el aprobado.' : R.nec > 10 ? 'Con lo que queda ya no llegas al 5: pregunta si hay reevaluación.' : `Para aprobar te hace falta un <b>${fmtNota(R.nec)}</b> en el resto.`}`;
+  return `<p class="hint" style="margin:0 0 8px">${res}</p>
+    <div class="stack">${P.map((x, i) => `<label class="nota-row" style="${colorVars(code)}"><span><b>${esc(x.n)}</b><small>${num(x.p)} % de la nota</small></span>
+      <input class="nota-in" data-ni="${i}" inputmode="decimal" placeholder="—" value="${x.nota != null ? fmtNota(x.nota) : ''}" aria-label="Nota de ${esc(x.n)}, sobre 10"></label>`).join('')}</div>
+    <p class="hint" style="margin:8px 0 0">${propio ? 'Partes y pesos puestos por ti' : 'Partes y pesos de la guía docente'}${tot !== 100 ? ` · suman ${num(tot)} %, revísalo` : ''}${!propio && (EV[code] || [])[0] === 'elegir' ? ' · la guía da a elegir cómo evaluarte' : ''}.
+      <button class="link" id="nEdit">Cambiar</button></p>`;
+}
+function bindNotas(code, rerender) {
+  const guardar = partes => { S.notas = S.notas || {}; S.notas[code] = { ...(S.notas[code] || {}), partes }; };
+  document.querySelectorAll('[data-ni]').forEach(inp => inp.onchange = () => {
+    const t = inp.value.trim().replace(',', '.'), n = t === '' ? null : Number(t);
+    if (n != null && !(n >= 0 && n <= 10)) { toast('La nota va de 0 a 10'); inp.value = ''; return; }
+    const P = partesDe(code).map(x => ({ ...x }));
+    P[Number(inp.dataset.ni)].nota = n == null ? null : Math.round(n * 100) / 100;
+    guardar(P); rerender();
+  });
+  if ($('#nEdit')) $('#nEdit').onclick = () => openPartes(code, rerender);
+}
+// cambiar las partes de la evaluación y lo que pesa cada una
+function openPartes(code, after) {
+  let P = partesDe(code).map(x => ({ ...x }));
+  if (!P.length) P = [{ n: '', p: '', nota: null }];
+  const guia = partesGuia(code);
+  const { q, close } = sheet(`
+    <header><h2>Partes de la nota · ${esc(subj(code).s || subj(code).n)}</h2><button type="button" class="icon" data-x aria-label="Cerrar">${ico('x')}</button></header>
+    <p class="hint" style="margin:-6px 0 0">Cada parte (examen, práctica, entrega…) y cuánto cuenta en la nota final. Mira la guía docente si dudas.</p>
+    <div class="stack" id="pList"></div>
+    <button type="button" class="btn small" id="pAdd" style="align-self:flex-start">+ Añadir parte</button>
+    <small class="hint" id="pTot"></small>
+    <p class="err" id="pErr" hidden></p>
+    <footer>${guia.length ? '<button type="button" class="link" id="pGuia">Usar los de la guía</button>' : ''}<span class="sp"></span>
+      <button type="button" class="btn" data-x>Cancelar</button><button type="submit" class="btn primary">Guardar</button></footer>`);
+  const read = () => q('#pList').querySelectorAll('.np-row').forEach((r, i) => { P[i].n = r.querySelector('[data-pn]').value; P[i].p = r.querySelector('[data-pp]').value; });
+  const tot = () => P.reduce((n, x) => n + (Number(String(x.p).replace(',', '.')) || 0), 0);
+  const paint = () => {
+    q('#pList').innerHTML = P.map((x, i) => `<div class="np-row">
+      <input data-pn maxlength="40" value="${esc(x.n)}" placeholder="Ej.: Examen parcial" aria-label="Nombre de la parte ${i + 1}" autocomplete="off">
+      <span class="np-p"><input data-pp inputmode="decimal" value="${x.p === '' ? '' : num(x.p)}" placeholder="0" aria-label="Peso de la parte ${i + 1} en %">%</span>
+      <button type="button" class="icon" data-pdel="${i}" aria-label="Quitar la parte ${i + 1}">${ico('x')}</button></div>`).join('');
+    const t = tot(); q('#pTot').textContent = `En total: ${num(Math.round(t * 10) / 10)} %${Math.abs(t - 100) > 0.01 ? ' (lo normal es que sumen 100 %)' : ''}`;
+    q('#pList').querySelectorAll('[data-pdel]').forEach(b => b.onclick = () => { read(); P.splice(Number(b.dataset.pdel), 1); paint(); });
+    q('#pList').querySelectorAll('[data-pp]').forEach(i => i.oninput = () => { read(); const t = tot(); q('#pTot').textContent = `En total: ${num(Math.round(t * 10) / 10)} %${Math.abs(t - 100) > 0.01 ? ' (lo normal es que sumen 100 %)' : ''}`; });
+  };
+  paint();
+  q('#pAdd').onclick = () => { read(); P.push({ n: '', p: '', nota: null }); paint(); q('#pList').querySelector('.np-row:last-child [data-pn]').focus(); };
+  if (q('#pGuia')) q('#pGuia').onclick = () => { S.notas = S.notas || {}; delete S.notas[code]; save(); close(); toast('Partes y pesos de la guía docente'); after(); };
+  q('form').onsubmit = e => {
+    e.preventDefault(); read();
+    const limpias = P.filter(x => String(x.n).trim() || String(x.p).trim())
+      .map((x, i) => ({ n: String(x.n).trim() || `Parte ${i + 1}`, p: Number(String(x.p).replace(',', '.')), nota: x.nota ?? null }));
+    const mal = limpias.find(x => !(x.p > 0 && x.p <= 100));
+    if (mal) { q('#pErr').textContent = `Pon un peso entre 1 y 100 % a «${mal.n}».`; q('#pErr').hidden = false; return; }
+    S.notas = S.notas || {};
+    if (limpias.length) S.notas[code] = { partes: limpias, propio: true }; else delete S.notas[code];
+    save(); close(); toast('Partes guardadas'); after();
+  };
+}
 
 async function viewTemario() {
   const code = S.temCode, a = subj(code), v = $('#view');
@@ -2627,8 +2725,9 @@ async function viewTemario() {
     <div class="tem-head" style="${colorVars(code)}"><span class="bar"></span><div>
       <h1>${esc(a.n)}</h1></div></div>
     <div class="eday">Esta semana</div>
-    ${r && r.lv !== 'no' ? `<div class="field" style="margin:0 0 6px"><span>¿Cómo la llevas?</span>
-        <div class="seg2" role="group" style="margin:0">${CUESTA.map(([k, t]) => `<button data-cu="${k}" aria-pressed="${(r.cu || '') === k}">${t}</button>`).join('')}</div></div>
+    ${r && r.lv !== 'no' ? `<div class="field" style="margin:0 0 6px"><span>¿Cómo la llevas?${r.cuNotas ? ' <small>(según tus notas)</small>' : ''}</span>
+        <div class="seg2" role="group" style="margin:0">${CUESTA.map(([k, t]) => `<button data-cu="${k}" aria-pressed="${(r.cu || 'normal') === k}">${t}</button>`).join('')}</div>
+        ${(E.cuesta || {})[code] && notasResumen(code) ? '<button class="link" id="tNotas" style="align-self:flex-start">Que lo decidan mis notas</button>' : ''}</div>
       <div class="adj-row"><span class="adj-n">Horas de estudio<small style="white-space:normal">${r.manual ? 'Puestas por ti' : porQue(r)}</small></span>
         <div class="stepper"><button data-m aria-label="Media hora menos de estudio de ${esc(a.n)}">−</button><output>${hfmt(r.horas)}</output><button data-p aria-label="Media hora más de estudio de ${esc(a.n)}">+</button></div></div>
       <div class="row" style="gap:14px;flex-wrap:wrap">${r.manual ? '<button class="link" id="tAuto">Que lo calcule Quatri</button>' : ''}<button class="link" id="tNo">No la estudio</button></div>`
@@ -2640,16 +2739,20 @@ async function viewTemario() {
         <span class="md">${DAYS_SHORT[wdOf(d)]} ${d.getDate()}/${d.getMonth() + 1}</span>
         <span><b>${esc(exName(e))}</b><small>${e[2] ? `${e[2]}–${e[3]}` : 'Sin hora'}${e[5] ? '' : ' · oficial'}</small></span>
         ${e[5] ? ico('right') : ''}</button>`; }).join('') || '<p class="hint">No hay exámenes en el calendario.</p>'}</div>
-    ${(EV[code] || [])[1] ? `<p class="hint" style="margin:8px 0 0">Nota final: ${esc(EV[code][1])}</p>` : ''}
-    <button class="btn" id="tAddEx" style="margin-top:10px">+ Añadir control o entrega</button>`;
+    <button class="btn" id="tAddEx" style="margin-top:10px">+ Añadir control o entrega</button>
+    <div class="eday" style="margin-top:22px">Tus notas</div>
+    ${notasHtml(code)}`;
   const rerender = () => { save(); const y = window.scrollY; viewTemario(); window.scrollTo(0, y); };
   const step = d => { E.ajuste = E.ajuste || {}; E.ajuste[code] = Math.max(0, Math.round((r.horas + d) * 2) / 2); rerender(); };
   if ($('[data-m]')) $('[data-m]').onclick = () => step(-0.5);
   if ($('[data-p]')) $('[data-p]').onclick = () => step(0.5);
   v.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => {
-    E.cuesta = E.cuesta || {}; if (b.dataset.cu) E.cuesta[code] = b.dataset.cu; else delete E.cuesta[code];
+    // lo que eliges tú manda sobre tus notas (hasta que tocas «Que lo decidan mis notas»)
+    E.cuesta = E.cuesta || {}; E.cuesta[code] = b.dataset.cu;
     PLAN_CACHE = {}; rerender();
   });
+  if ($('#tNotas')) $('#tNotas').onclick = () => { delete E.cuesta[code]; PLAN_CACHE = {}; rerender(); };
+  bindNotas(code, rerender);
   if ($('#tAuto')) $('#tAuto').onclick = () => { delete E.ajuste[code]; rerender(); };
   if ($('#tNo')) $('#tNo').onclick = () => { E.nivel = E.nivel || {}; E.nivel[code] = 'no'; delete (E.ajuste || {})[code]; rerender(); };
   if ($('#tSi')) $('#tSi').onclick = () => { E.nivel = E.nivel || {}; E.nivel[code] = 'si'; rerender(); };
