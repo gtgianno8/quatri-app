@@ -1,0 +1,151 @@
+{
+    "universidad":  "UPC",
+    "curso":  "2026-27",
+    "q":  "Q1",
+    "escuelas":  [
+                     {
+                         "id":  "250",
+                         "s":  "Camins",
+                         "n":  "Escola Tècnica Superior d\u0027Enginyeria de Camins, Canals i Ports de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-250-2026-27-q1.json",
+                         "grados":  5,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "390",
+                         "s":  "EEABB",
+                         "n":  "Escola d\u0027Enginyeria Agroalimentària i de Biosistemes de Barcelona",
+                         "ciudad":  "Castelldefels",
+                         "archivo":  "upc-390-2026-27-q1.json",
+                         "grados":  7,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "295",
+                         "s":  "EEBE",
+                         "n":  "Escola d\u0027Enginyeria de Barcelona Est",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-295-2026-27-q1.json",
+                         "grados":  7,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "300",
+                         "s":  "EETAC",
+                         "n":  "Escola d\u0027Enginyeria de Telecomunicació i Aeroespacial de Castelldefels",
+                         "ciudad":  "Castelldefels",
+                         "archivo":  "upc-300-2026-27-q1.json",
+                         "grados":  5,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "310",
+                         "s":  "EPSEB",
+                         "n":  "Escola Politècnica Superior d\u0027Edificació de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-310-2026-27-q1.json",
+                         "grados":  2,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "330",
+                         "s":  "EPSEM",
+                         "n":  "Escola Politècnica Superior d\u0027Enginyeria de Manresa",
+                         "ciudad":  "Manresa",
+                         "archivo":  "upc-330-2026-27-q1.json",
+                         "grados":  7,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "340",
+                         "s":  "EPSEVG",
+                         "n":  "Escola Politècnica Superior d\u0027Enginyeria de Vilanova i la Geltrú",
+                         "ciudad":  "Vilanova i la Geltrú",
+                         "archivo":  "upc-340-2026-27-q1.json",
+                         "grados":  8,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "205",
+                         "s":  "ESEIAAT",
+                         "n":  "Escola Superior d\u0027Enginyeries Industrial, Aeroespacial i Audiovisual de Terrassa",
+                         "ciudad":  "Terrassa",
+                         "archivo":  "upc-205-2026-27-q1.json",
+                         "grados":  11,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "210",
+                         "s":  "ETSAB",
+                         "n":  "Escola Tècnica Superior d\u0027Arquitectura de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-210-2026-27-q1.json",
+                         "grados":  1,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "290",
+                         "s":  "ETSAV",
+                         "n":  "Escola Tècnica Superior d\u0027Arquitectura del Vallès",
+                         "ciudad":  "Sant Cugat del Vallès",
+                         "archivo":  "upc-290-2026-27-q1.json",
+                         "grados":  1,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "240",
+                         "s":  "ETSEIB",
+                         "n":  "Escola Tècnica Superior d\u0027Enginyeria Industrial de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-240-2026-27-q1.json",
+                         "grados":  2,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "230",
+                         "s":  "ETSETB",
+                         "n":  "Escola Tècnica Superior d\u0027Enginyeria de Telecomunicació de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-230-2026-27-q1.json",
+                         "grados":  2,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "270",
+                         "s":  "FIB",
+                         "n":  "Facultat d\u0027Informàtica de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-270-2026-27-q1.json",
+                         "grados":  5,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "200",
+                         "s":  "FME",
+                         "n":  "Facultat de Matemàtiques i Estadística",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-200-2026-27-q1.json",
+                         "grados":  1,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "280",
+                         "s":  "FNB",
+                         "n":  "Facultat de Nàutica de Barcelona",
+                         "ciudad":  "Barcelona",
+                         "archivo":  "upc-280-2026-27-q1.json",
+                         "grados":  4,
+                         "aprox":  false
+                     },
+                     {
+                         "id":  "370",
+                         "s":  "FOOT",
+                         "n":  "Facultat d\u0027Òptica i Optometria de Terrassa",
+                         "ciudad":  "Terrassa",
+                         "archivo":  "upc-370-2026-27-q1.json",
+                         "grados":  1,
+                         "aprox":  false
+                     }
+                 ]
+}

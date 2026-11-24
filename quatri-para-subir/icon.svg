@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Quatri: la Q partida en los cuatro cuartos del cuatrimestre; el tuyo, en el verde del tiempo libre, hace de cola -->
+  <rect width="512" height="512" rx="112" fill="#14161B"/>
+  <g fill="none" stroke-width="64" transform="translate(-13 -13)">
+    <path d="M269.6 126.7 A130 130 0 0 1 385.3 242.4" stroke="#F3F4F7"/>
+    <path d="M242.4 385.3 A130 130 0 0 1 126.7 269.6" stroke="#F3F4F7"/>
+    <path d="M126.7 242.4 A130 130 0 0 1 242.4 126.7" stroke="#F3F4F7"/>
+    <path d="M385.3 269.6 A130 130 0 0 1 269.6 385.3" stroke="#3CCB93" transform="translate(30 30)"/>
+  </g>
+</svg>
